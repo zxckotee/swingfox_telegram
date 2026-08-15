@@ -1,3 +1,4 @@
+import copy
 from swinger import *
 from tg_methods import TgMethods
 
@@ -20,7 +21,7 @@ def registration(chat_id, user_id, message):
     else:
         
         if (user_state.status == "registration_type"):
-            data = user_state.data
+            data = copy.deepcopy(user_state.data)
             options = ["Мужчина", "Женщина", "Семейная пара", "Несемейная пара"]
             
             if (message['text'] in options):
@@ -49,7 +50,7 @@ def registration(chat_id, user_id, message):
             def second_person():
                 TgMethods.send_message(chat_id, "Как зовут Женщину?")
 
-            data = user_state.data
+            data = copy.deepcopy(user_state.data)
             print(data)
             persons = data['registration']['persons']
             type = data['registration']['type']
@@ -80,7 +81,7 @@ def registration(chat_id, user_id, message):
             def second_person():
                 TgMethods.send_message(chat_id, "Сколько лет Женщине?")
 
-            data = user_state.data
+            data = copy.deepcopy(user_state.data)
             persons = data['registration']['persons']
             type = data['registration']['type']
             if (type in ["Мужчина", "Женщина"]):
@@ -120,11 +121,17 @@ def registration(chat_id, user_id, message):
 
         elif (user_state.status == "registration_want_type"):
             options = ["Мужчину", "Женщину", "Семейную пару", "Несемейную пару", "Любую пару", "Без разницы"]
-            data = user_state.data
+            data = copy.deepcopy(user_state.data)
 
             if (message['text'] in options):
+                # ПРОПИСАТЬ СОЗДАНИЕ АККАУНТА -- готово
+                persons = data['registration']['persons']
+                type = data['registration']['type']
+                Swinger.createAccount(user_id, persons, type , message['text'], False) # на этом этапе в message['text'] у нас содержиться как раз want_type
+                
                 mess = "Ты успешно зарегистрирован! Начинай знакомиться!"
                 TgMethods.send_message(chat_id, mess, reply_markup={'remove_keyboard': True})
+                
 
                 Swinger.setUserState(user_id, "watch_profiles", data)
                 

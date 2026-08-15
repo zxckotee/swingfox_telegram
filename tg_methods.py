@@ -57,7 +57,7 @@ class TgMethods:
 
 
     @staticmethod
-    def send_message(chat_id, text, reply_markup=None, parse_mode=None):
+    def send_message(chat_id, text, reply_markup=None, parse_mode=None, entities=None):
         """
         Отправляет текстовое сообщение.
         Эквивалент bot.send_message() из pytelegrambotapi
@@ -66,7 +66,8 @@ class TgMethods:
         payload = {
             'chat_id': chat_id,
             'text': text,
-            'parse_mode': parse_mode
+            'parse_mode': parse_mode,
+            'entities': entities
         }
         
         if reply_markup:

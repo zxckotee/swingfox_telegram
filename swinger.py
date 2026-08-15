@@ -5,6 +5,7 @@ import os
 from sqlalchemy import *
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.orm import *
+from sqlalchemy.orm.attributes import flag_modified
 from psycopg2 import *
 
 
@@ -25,7 +26,6 @@ class User(Base):
     
     # Поля таблицы
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, index=True)
-    username: Mapped[str] = mapped_column(String(), nullable=False, unique=True)
     persons: Mapped[dict] = mapped_column(JSON, nullable=False) # Имена и возраста
     type: Mapped[str] = mapped_column(String(), nullable=False) # тип аккаунта Мужчина/Женщина/Пара
     want_type: Mapped[str] = mapped_column(String(), nullable=False) # тип аккаунта с которыми мы хотим знакомиться Мужчина/Женщина/Пара
@@ -80,23 +80,25 @@ class Swinger:
         return state
 
     @staticmethod
-    def setUserState(user_id, status , data):
+    def setUserState(user_id, status , data={}):
+        payload = copy.deepcopy(data)
         state = session.query(State).filter(State.user_id == user_id).one_or_none()
         
         if (state is not None):
             state.status = status
-            state.data = copy.deepcopy(data)
-            
+            if (data != {}):
+                state.data = payload
+            flag_modified(state, 'data')
         else: 
-            new_state = State(user_id=user_id, status=status, data=copy.deepcopy(data))
+            new_state = State(user_id=user_id, status=status, data=payload)
             session.add(new_state)
-            print(f'Обнуление при {data}')
         session.commit()
+        session.expire_all()
         return status
     
     @staticmethod
-    def createAccount(user_id, username, persons, type , want_type="Без разницы", premium=False): 
-        new_user = User(id=user_id, username=username, persons=persons, type=type, want_type=want_type, premium=premium)
+    def createAccount(user_id, persons, type , want_type="Без разницы", premium=False): 
+        new_user = User(id=user_id, persons=persons, type=type, want_type=want_type, premium=premium)
         session.add(new_user)
         session.commit()
 
