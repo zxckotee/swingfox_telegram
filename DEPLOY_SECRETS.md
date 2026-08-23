@@ -103,3 +103,18 @@ docker compose exec backend printenv | grep TELEGRAM
 ```
 
 Сначала деплой swingfox, затем swingfox_telegram.
+
+---
+
+## Ручной запуск (кнопка Run workflow)
+
+1. GitHub → репозиторий **swingfox_telegram** → **Actions**
+2. Слева выберите workflow:
+   - **CI/CD Telegram Bot (production)** — prod (`/root/swingfox_telegram`)
+   - **CI/CD Telegram Bot (staging)** — staging (`/root/swingfox_telegram-staging`)
+3. Справа **Run workflow** → ветка репозитория → **Run workflow**
+4. Параметры:
+   - **branch** — какую ветку задеплоить на сервер (по умолчанию `prod3` / `stagging`)
+   - **skip_build** — перезапуск без `docker build`
+
+Кнопка видна, когда workflow-файл есть в выбранной ветке (после merge в `master` / `stagging`).
