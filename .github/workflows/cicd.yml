@@ -6,6 +6,17 @@ on:
       - master
       - prod3
   workflow_dispatch:
+    inputs:
+      branch:
+        description: "Ветка для деплоя (пусто = ветка запуска workflow)"
+        required: false
+        type: string
+        default: "prod3"
+      skip_build:
+        description: "Не пересобирать образ (только docker compose up)"
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   deploy:
@@ -27,12 +38,19 @@ jobs:
 
             DEPLOY_PATH="/root/swingfox_telegram"
             REPO_URL="https://github.com/${{ github.repository }}.git"
-            BRANCH="${{ github.ref_name }}"
+            INPUT_BRANCH='${{ github.event.inputs.branch }}'
+            if [ -n "$INPUT_BRANCH" ]; then
+              BRANCH="$INPUT_BRANCH"
+            else
+              BRANCH="${{ github.ref_name }}"
+            fi
+            SKIP_BUILD='${{ github.event.inputs.skip_build }}'
 
             echo "============================================"
             echo "  Telegram bot CI/CD — $(date '+%Y-%m-%d %H:%M:%S')"
-            echo "  Branch: $BRANCH"
-            echo "  Path:   $DEPLOY_PATH"
+            echo "  Trigger: ${{ github.event_name }}"
+            echo "  Branch:  $BRANCH"
+            echo "  Path:    $DEPLOY_PATH"
             echo "============================================"
 
             if [ ! -d "$DEPLOY_PATH/.git" ]; then
@@ -51,11 +69,14 @@ jobs:
 
             bash scripts/write-env-from-ci.sh "$DEPLOY_PATH"
 
-            # Ensure swingfox network exists (main stack must be deployed first)
             docker network inspect swingfox_default >/dev/null 2>&1 \
               || { echo "ERROR: network swingfox_default not found. Deploy swingfox first."; exit 1; }
 
-            docker compose -f docker-compose.yml up -d --build --remove-orphans
+            if [ "$SKIP_BUILD" = "true" ]; then
+              docker compose -f docker-compose.yml up -d --remove-orphans
+            else
+              docker compose -f docker-compose.yml up -d --build --remove-orphans
+            fi
             docker compose -f docker-compose.yml ps
 
             echo "Telegram bot deploy complete"

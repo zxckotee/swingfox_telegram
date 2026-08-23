@@ -4,8 +4,18 @@ on:
   push:
     branches:
       - stagging
-      - cursor/swingfox-telegram-interface-2a4a
   workflow_dispatch:
+    inputs:
+      branch:
+        description: "Ветка для деплоя (пусто = ветка запуска workflow)"
+        required: false
+        type: string
+        default: "stagging"
+      skip_build:
+        description: "Не пересобирать образ (только docker compose up)"
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   deploy:
@@ -27,11 +37,18 @@ jobs:
 
             DEPLOY_PATH="/root/swingfox_telegram-staging"
             REPO_URL="https://github.com/${{ github.repository }}.git"
-            BRANCH="${{ github.ref_name }}"
+            INPUT_BRANCH='${{ github.event.inputs.branch }}'
+            if [ -n "$INPUT_BRANCH" ]; then
+              BRANCH="$INPUT_BRANCH"
+            else
+              BRANCH="${{ github.ref_name }}"
+            fi
+            SKIP_BUILD='${{ github.event.inputs.skip_build }}'
 
             echo "============================================"
             echo "  Telegram bot STAGING — $(date '+%Y-%m-%d %H:%M:%S')"
-            echo "  Branch: $BRANCH"
+            echo "  Trigger: ${{ github.event_name }}"
+            echo "  Branch:  $BRANCH"
             echo "============================================"
 
             if [ ! -d "$DEPLOY_PATH/.git" ]; then
@@ -53,7 +70,12 @@ jobs:
             docker network inspect swingfox-staging_default >/dev/null 2>&1 \
               || { echo "ERROR: network swingfox-staging_default not found. Deploy swingfox staging first."; exit 1; }
 
-            docker compose -p swingfox-telegram-staging -f docker-compose.staging.yml up -d --build --remove-orphans
-            docker compose -p swingfox-telegram-staging -f docker-compose.staging.yml ps
+            COMPOSE="docker compose -p swingfox-telegram-staging -f docker-compose.staging.yml"
+            if [ "$SKIP_BUILD" = "true" ]; then
+              $COMPOSE up -d --remove-orphans
+            else
+              $COMPOSE up -d --build --remove-orphans
+            fi
+            $COMPOSE ps
 
             echo "Telegram bot staging deploy complete"
