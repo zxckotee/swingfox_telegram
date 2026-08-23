@@ -1,4 +1,4 @@
-name: CI/CD Telegram Bot (production)
+name: CI/CD Telegram Bot
 
 on:
   push:
@@ -11,7 +11,7 @@ on:
         description: "Ветка для деплоя (пусто = ветка запуска workflow)"
         required: false
         type: string
-        default: "prod3"
+        default: "master"
       skip_build:
         description: "Не пересобирать образ (только docker compose up)"
         required: false
@@ -20,7 +20,7 @@ on:
 
 jobs:
   deploy:
-    name: Deploy telegram bot to production host
+    name: Deploy telegram bot (production)
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -47,7 +47,7 @@ jobs:
             SKIP_BUILD='${{ github.event.inputs.skip_build }}'
 
             echo "============================================"
-            echo "  Telegram bot CI/CD — $(date '+%Y-%m-%d %H:%M:%S')"
+            echo "  Telegram bot deploy — $(date '+%Y-%m-%d %H:%M:%S')"
             echo "  Trigger: ${{ github.event_name }}"
             echo "  Branch:  $BRANCH"
             echo "  Path:    $DEPLOY_PATH"

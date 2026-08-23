@@ -1,120 +1,61 @@
 # Секреты и деплой Telegram-бота
 
-Бот и сайт живут на **одном сервере**. Staging и production используют **одни и те же GitHub Secrets** (токен бота, shared secret, SSH). Отличаются только URL сайта — они зашиты в CI/CD workflow каждого окружения.
+Один production-бот на том же сервере, что и сайт. Staging для бота **не используется**.
 
 ## Порядок деплоя
 
-1. **swingfox** — backend + frontend + postgres (миграции, Docker-сеть)
-2. **swingfox_telegram** — контейнер бота (та же Docker-сеть)
+1. **swingfox** (prod) — backend + сеть `swingfox_default`
+2. **swingfox_telegram** — контейнер бота в `/root/swingfox_telegram`
 
 ---
 
-## GitHub Secrets — репозиторий `swingfox`
-
-**Settings → Secrets and variables → Actions**
-
-### Уже есть
-
-| Secret | Назначение |
-|--------|------------|
-| `SSH_HOST` | IP/hostname сервера |
-| `SSH_USER` | SSH-пользователь |
-| `SSH_PRIVATE_KEY` | Ключ для деплоя |
-| `SSL_CERT` | SSL (base64) |
-| `SSL_KEY` | SSL key (base64) |
-| `OPENROUTER_API_KEY` | chat-bots (prod) |
-
-### Telegram (prod **и** staging — одни secrets)
+## GitHub Secrets — `swingfox`
 
 | Secret | Описание |
 |--------|----------|
+| `SSH_HOST`, `SSH_USER`, `SSH_PRIVATE_KEY` | Деплой на сервер |
 | `TELEGRAM_BOT_TOKEN` | Токен @BotFather |
-| `TELEGRAM_BOT_SHARED_SECRET` | Случайная строка 32+ символов; **одинаковая** в swingfox и swingfox_telegram |
-| `TELEGRAM_BOT_USERNAME` | Имя бота без `@` |
-
-Используются в:
-- `cicd.yml` (ветка `prod3`) — backend prod
-- `cicd-staging.yml` (ветка `stagging`) — backend staging
+| `TELEGRAM_BOT_SHARED_SECRET` | Ваш сгенерированный ключ (32+ символов) |
+| `TELEGRAM_BOT_USERNAME` | Username бота без `@` |
 
 ---
 
-## GitHub Secrets — репозиторий `swingfox_telegram`
-
-### SSH (те же, что swingfox)
-
-| Secret |
-|--------|
-| `SSH_HOST` |
-| `SSH_USER` |
-| `SSH_PRIVATE_KEY` |
-
-### Telegram (prod **и** staging — одни secrets)
+## GitHub Secrets — `swingfox_telegram`
 
 | Secret | = в swingfox |
 |--------|----------------|
+| `SSH_HOST`, `SSH_USER`, `SSH_PRIVATE_KEY` | те же |
 | `TELEGRAM_SECRET` | `TELEGRAM_BOT_TOKEN` |
-| `TELEGRAM_BOT_SHARED_SECRET` | `TELEGRAM_BOT_SHARED_SECRET` |
-
-Используются в `cicd.yml` и `cicd-staging.yml`.
-
-### URL (не secrets — в workflow)
-
-| Окружение | SWINGFOX_API_URL | SWINGFOX_UPLOADS_URL | PUBLIC_WEB_URL |
-|-----------|------------------|----------------------|----------------|
-| Production | `http://backend:3001/api` | `https://swingfox.ru/uploads` | `https://swingfox.ru` |
-| Staging | `http://backend:3001/api` | `https://swingfox.ru/stagging/uploads` | `https://swingfox.ru/stagging` |
+| `TELEGRAM_BOT_SHARED_SECRET` | тот же shared secret |
 
 ---
 
-## Сводка совпадений
+## Workflow
 
-```
-swingfox.TELEGRAM_BOT_TOKEN         =  swingfox_telegram.TELEGRAM_SECRET
-swingfox.TELEGRAM_BOT_SHARED_SECRET =  swingfox_telegram.TELEGRAM_BOT_SHARED_SECRET
-```
+Один pipeline: **CI/CD Telegram Bot** (файл `.github/workflows/cicd.yml`)
 
-Один бот @BotFather на оба окружения: backend шлёт уведомления, контейнер бота принимает сообщения.
+- Автозапуск при push в `master` или `prod3`
+- Ручной запуск: **Actions → CI/CD Telegram Bot → Run workflow**
 
----
+### Почему не видно workflow в Actions?
 
-## Пути на сервере
-
-| Окружение | swingfox | swingfox_telegram |
-|-----------|----------|-------------------|
-| Production | `/root/swingfox` | `/root/swingfox_telegram` |
-| Staging | `/root/swingfox-staging` | `/root/swingfox_telegram-staging` |
+GitHub показывает workflow только если файл **есть в default-ветке (`master`)**.  
+Смержите PR #1 в `master` — появится один pipeline «CI/CD Telegram Bot».
 
 ---
 
-## Минимальный набор secrets (оба репо)
+## Ручной запуск
 
-**swingfox:** `SSH_*`, `SSL_*`, `OPENROUTER_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_SHARED_SECRET`, `TELEGRAM_BOT_USERNAME`
-
-**swingfox_telegram:** `SSH_*`, `TELEGRAM_SECRET`, `TELEGRAM_BOT_SHARED_SECRET`
+1. **Actions** → **CI/CD Telegram Bot** → **Run workflow**
+2. Параметры:
+   - **branch** — ветка для деплоя (по умолчанию `master`)
+   - **skip_build** — без пересборки образа
 
 ---
 
-## Проверка
+## Проверка на сервере
 
 ```bash
 docker ps | grep telegram
 docker logs swingfox_telegram_bot --tail 30
-docker compose exec backend printenv | grep TELEGRAM
 ```
-
-Сначала деплой swingfox, затем swingfox_telegram.
-
----
-
-## Ручной запуск (кнопка Run workflow)
-
-1. GitHub → репозиторий **swingfox_telegram** → **Actions**
-2. Слева выберите workflow:
-   - **CI/CD Telegram Bot (production)** — prod (`/root/swingfox_telegram`)
-   - **CI/CD Telegram Bot (staging)** — staging (`/root/swingfox_telegram-staging`)
-3. Справа **Run workflow** → ветка репозитория → **Run workflow**
-4. Параметры:
-   - **branch** — какую ветку задеплоить на сервер (по умолчанию `prod3` / `stagging`)
-   - **skip_build** — перезапуск без `docker build`
-
-Кнопка видна, когда workflow-файл есть в выбранной ветке (после merge в `master` / `stagging`).
