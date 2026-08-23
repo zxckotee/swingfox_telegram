@@ -1,56 +1,55 @@
-import requests
-import time
-import json
 import os
+import time
+
 from dotenv import load_dotenv
-from tg_methods import TgMethods
+
+from api.swingfox_client import SwingfoxClient
+from handlers.bot_handlers import BotHandlers
+from telegram.client import TelegramClient
 
 load_dotenv()
-# Подгрузка секретов из .env
-token = os.getenv('TELEGRAM_SECRET')
 
-# Ваш токен, полученный от @BotFather
-TOKEN = token
-BASE_URL = f'https://api.telegram.org/bot{TOKEN}'
 
-def main():
-    """
-    Главный цикл бота.
-    Эквивалент bot.polling() из pytelegrambotapi
-    """
-    print('Бот запущен. Ожидание сообщений...')
+def run_polling() -> None:
+    api = SwingfoxClient()
+    handlers = BotHandlers(api)
+    tg = TelegramClient()
+
+    print('SwingFox Telegram bot started (polling)...')
     last_update_id = 0
-    
+
     while True:
         try:
-            # Получаем новые обновления
-            updates = TgMethods.get_updates(offset=last_update_id + 1)
-            
+            updates = tg.get_updates(offset=last_update_id + 1 if last_update_id else None)
             for update in updates:
-                # Сохраняем ID обновления, чтобы не получать его снова
-                if update.get('update_id', 0) > last_update_id:
-                    last_update_id = update['update_id']
-                
-                # Обрабатываем текстовые сообщения
+                uid = update.get('update_id', 0)
+                if uid > last_update_id:
+                    last_update_id = uid
+
                 if 'message' in update:
-                    message = update['message']
-                    chat_id = message['chat']['id']
-                    user_id = message['from']['id']
-                    text = message.get('text', '')
-                    TgMethods.handle_message(chat_id, user_id, message)
-                                
-                # Обрабатываем callback-запросы (если добавите инлайн-кнопки)
+                    msg = update['message']
+                    chat_id = msg['chat']['id']
+                    user_id = msg['from']['id']
+                    username = msg.get('from', {}).get('username')
+                    text = msg.get('text', '')
+
+                    if text.startswith('/start'):
+                        handlers.handle_start(chat_id, user_id, text.strip(), username)
+                    elif text:
+                        handlers.handle_text(chat_id, user_id, text.strip())
+
                 elif 'callback_query' in update:
-                    callback = update['callback_query']
-                    chat_id = callback['message']['chat']['id']
-                    data = callback['data']
-                    callback_id = callback['id']
-                    TgMethods.handle_callback_query(callback_id, chat_id, data)
-        
-        except Exception as e:
-            print(f'Ошибка: {e}')
+                    handlers.handle_callback(update['callback_query'])
+
+        except KeyboardInterrupt:
+            print('Stopped.')
+            break
+        except Exception as exc:
+            print(f'Error: {exc}')
             time.sleep(5)
 
-if __name__ == '__main__':
-    main()
 
+if __name__ == '__main__':
+    if not os.getenv('TELEGRAM_SECRET'):
+        raise SystemExit('Set TELEGRAM_SECRET in .env')
+    run_polling()
