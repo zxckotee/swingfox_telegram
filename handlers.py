@@ -2,6 +2,12 @@ import copy
 from swinger import *
 from tg_methods import TgMethods
 
+def parse_age(text):
+    text = text.strip()
+    if not text.isdigit():
+        return None
+    return int(text)
+
 def registration(chat_id, user_id, message):
     user_state = Swinger.getUserState(user_id)
     
@@ -85,10 +91,14 @@ def registration(chat_id, user_id, message):
             persons = data['registration']['persons']
             type = data['registration']['type']
             if (type in ["Мужчина", "Женщина"]):
+                age = parse_age(message['text'])
+                if age is None:
+                    TgMethods.send_message(chat_id, "Укажи возраст целым числом, например: 25")
+                    return
                 if type=='Мужчина':
-                    persons["man"]["age"] = message['text']
+                    persons["man"]["age"] = age
                 elif type=='Женщина':
-                    persons["woman"]["age"] = message['text']
+                    persons["woman"]["age"] = age
                 data['registration']["persons"] = persons
                 Swinger.setUserState(user_id, 'registration_want_type', data)
                 buttons = [
@@ -100,14 +110,17 @@ def registration(chat_id, user_id, message):
                 TgMethods.send_message(chat_id, "Кого хочешь найти?", reply_markup)      
 
             elif (user_state.data['registration']['type'] in ["Семейная пара", "Несемейная пара"]):
-                if (persons['man'] == {} and persons['woman'] == {}):
-                    persons['man']["age"] = message['text']
+                age = parse_age(message['text'])
+                if age is None:
+                    TgMethods.send_message(chat_id, "Укажи возраст целым числом, например: 25")
+                    return
+                if 'age' not in persons['man']:
+                    persons['man']["age"] = age
                     data['registration']["persons"] = persons
                     Swinger.setUserState(user_id, 'registration_age', data)
-                    # один есть, второго нету, отправляем на второй круг
                     second_person()
-                elif persons['woman'] == {} and persons['man'] != {}:
-                    persons['woman']["age"] = message['text']
+                elif 'age' not in persons['woman']:
+                    persons['woman']["age"] = age
                     data['registration']["persons"] = persons
                     # можно завершать этап, оба есть
                     Swinger.setUserState(user_id, 'registration_want_type', data)
