@@ -1,0 +1,61 @@
+name: CI/CD Telegram Bot (production)
+
+on:
+  push:
+    branches:
+      - master
+      - prod3
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy telegram bot to production host
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          command_timeout: 12m
+          script: |
+            set -e
+
+            DEPLOY_PATH="/root/swingfox_telegram"
+            REPO_URL="https://github.com/${{ github.repository }}.git"
+            BRANCH="${{ github.ref_name }}"
+
+            echo "============================================"
+            echo "  Telegram bot CI/CD — $(date '+%Y-%m-%d %H:%M:%S')"
+            echo "  Branch: $BRANCH"
+            echo "  Path:   $DEPLOY_PATH"
+            echo "============================================"
+
+            if [ ! -d "$DEPLOY_PATH/.git" ]; then
+              git clone "$REPO_URL" "$DEPLOY_PATH"
+            fi
+
+            cd "$DEPLOY_PATH"
+            git fetch origin
+            git reset --hard "origin/$BRANCH"
+
+            export TELEGRAM_SECRET='${{ secrets.TELEGRAM_SECRET }}'
+            export TELEGRAM_BOT_SHARED_SECRET='${{ secrets.TELEGRAM_BOT_SHARED_SECRET }}'
+            export SWINGFOX_API_URL='${{ secrets.SWINGFOX_API_URL }}'
+            export SWINGFOX_UPLOADS_URL='${{ secrets.SWINGFOX_UPLOADS_URL }}'
+            export PUBLIC_WEB_URL='${{ secrets.PUBLIC_WEB_URL }}'
+
+            bash scripts/write-env-from-ci.sh "$DEPLOY_PATH"
+
+            # Ensure swingfox network exists (main stack must be deployed first)
+            docker network inspect swingfox_default >/dev/null 2>&1 \
+              || { echo "ERROR: network swingfox_default not found. Deploy swingfox first."; exit 1; }
+
+            docker compose -f docker-compose.yml up -d --build --remove-orphans
+            docker compose -f docker-compose.yml ps
+
+            echo "Telegram bot deploy complete"

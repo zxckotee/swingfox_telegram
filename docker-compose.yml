@@ -1,0 +1,24 @@
+# Production: same host as swingfox main stack.
+# Requires swingfox network: docker network ls | grep swingfox_default
+#
+# Usage on server:
+#   cd /root/swingfox_telegram
+#   docker compose up -d --build
+
+services:
+  telegram-bot:
+    build: .
+    container_name: swingfox_telegram_bot
+    restart: unless-stopped
+    environment:
+      TELEGRAM_SECRET: ${TELEGRAM_SECRET}
+      TELEGRAM_BOT_SHARED_SECRET: ${TELEGRAM_BOT_SHARED_SECRET}
+      SWINGFOX_API_URL: ${SWINGFOX_API_URL:-http://backend:3001/api}
+      SWINGFOX_UPLOADS_URL: ${SWINGFOX_UPLOADS_URL:-https://swingfox.ru/uploads}
+      PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-https://swingfox.ru}
+    networks:
+      - swingfox_default
+
+networks:
+  swingfox_default:
+    external: true
