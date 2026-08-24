@@ -3,7 +3,7 @@
 #
 # Usage on server:
 #   cd /root/swingfox_telegram
-#   docker compose up -d --build
+#   docker-compose up -d --build
 
 services:
   telegram-bot:

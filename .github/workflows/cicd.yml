@@ -13,7 +13,7 @@ on:
         type: string
         default: "master"
       skip_build:
-        description: "Не пересобирать образ (только docker compose up)"
+        description: "Не пересобирать образ (только docker-compose up)"
         required: false
         default: false
         type: boolean
@@ -73,10 +73,10 @@ jobs:
               || { echo "ERROR: network swingfox_default not found. Deploy swingfox first."; exit 1; }
 
             if [ "$SKIP_BUILD" = "true" ]; then
-              docker compose -f docker-compose.yml up -d --remove-orphans
+              docker-compose up -d --remove-orphans
             else
-              docker compose -f docker-compose.yml up -d --build --remove-orphans
+              docker-compose up -d --build --remove-orphans
             fi
-            docker compose -f docker-compose.yml ps
+            docker-compose ps
 
             echo "Telegram bot deploy complete"
