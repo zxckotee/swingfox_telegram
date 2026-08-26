@@ -27,8 +27,23 @@
 | `SSH_HOST`, `SSH_USER`, `SSH_PRIVATE_KEY` | те же |
 | `TELEGRAM_SECRET` | `TELEGRAM_BOT_TOKEN` |
 | `TELEGRAM_BOT_SHARED_SECRET` | тот же shared secret |
+| `TELEGRAM_PROXY` *(optional)* | SOCKS5/HTTP proxy если `api.telegram.org` недоступен с сервера, напр. `socks5://127.0.0.1:1080` |
+| `TELEGRAM_API_BASE_URL` *(optional)* | Альтернативный gateway, по умолчанию `https://api.telegram.org` |
 
 ---
+
+## Если бот не видит Telegram API
+
+Ошибки вида `Network is unreachable`, `Read timed out`, `Connection reset` означают, что контейнер не может достучаться до `api.telegram.org`.
+
+1. На сервере проверьте:
+   ```bash
+   curl -I --max-time 10 https://api.telegram.org
+   ```
+2. Если не открывается — поднимите SOCKS5/HTTP proxy на сервере (или используйте внешний) и добавьте secret **`TELEGRAM_PROXY`**
+3. Перезапустите деплой бота (Run workflow)
+
+В логах больше не печатается токен — только `***`.
 
 ## Workflow
 
