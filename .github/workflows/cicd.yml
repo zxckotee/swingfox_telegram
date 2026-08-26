@@ -72,14 +72,9 @@ jobs:
             bash scripts/write-env-from-ci.sh "$DEPLOY_PATH"
 
             if [ "$SKIP_BUILD" = "true" ]; then
-              docker-compose up -d --remove-orphans
+              bash "$DEPLOY_PATH/scripts/redeploy.sh" nobuild
             else
-              docker-compose up -d --build --remove-orphans
+              bash "$DEPLOY_PATH/scripts/redeploy.sh" build
             fi
-<<<<<<< Updated upstream
-            docker-compose ps
-            docker-compose logs --tail 20
-=======
->>>>>>> Stashed changes
 
             echo "Telegram bot deploy complete"
