@@ -36,14 +36,16 @@
 
 Ошибки вида `Network is unreachable`, `Read timed out`, `Connection reset` означают, что контейнер не может достучаться до `api.telegram.org`.
 
-1. На сервере проверьте:
+1. На сервере проверьте с **хоста** и **из контейнера**:
    ```bash
    curl -I --max-time 10 https://api.telegram.org
+   docker exec swingfox_telegram_bot curl -I --max-time 10 https://api.telegram.org
    ```
-2. Если не открывается — поднимите SOCKS5/HTTP proxy на сервере (или используйте внешний) и добавьте secret **`TELEGRAM_PROXY`**
-3. Перезапустите деплой бота (Run workflow)
+2. Если с хоста работает, а из контейнера нет — в `docker-compose.yml` раскомментируйте `network_mode: host` и задайте `SWINGFOX_API_URL=http://127.0.0.1:3001/api`
+3. Если нигде не открывается — добавьте **`TELEGRAM_PROXY`**
+4. Перезапустите деплой бота
 
-В логах больше не печатается токен — только `***`.
+Старый бот (`tg_methods.py`) использовал простой `requests.get` **без timeout** для long polling — новый клиент приведён к тому же паттерну.
 
 ## Workflow
 
