@@ -76,7 +76,10 @@ jobs:
             else
               docker-compose up -d --build --remove-orphans
             fi
+<<<<<<< Updated upstream
             docker-compose ps
             docker-compose logs --tail 20
+=======
+>>>>>>> Stashed changes
 
             echo "Telegram bot deploy complete"
