@@ -1,7 +1,8 @@
-# Production: same host as swingfox main stack.
-# Requires swingfox network: docker network ls | grep swingfox_default
+# Production bot on the same host as swingfox.
+# Uses host network (like legacy python main.py) so api.telegram.org is reachable
+# when Docker bridge network is blocked/unstable.
 #
-# Usage on server:
+# Usage:
 #   cd /root/swingfox_telegram
 #   docker-compose up -d --build
 
@@ -10,15 +11,12 @@ services:
     build: .
     container_name: swingfox_telegram_bot
     restart: unless-stopped
+    network_mode: host
     environment:
       TELEGRAM_SECRET: ${TELEGRAM_SECRET}
       TELEGRAM_BOT_SHARED_SECRET: ${TELEGRAM_BOT_SHARED_SECRET}
-      SWINGFOX_API_URL: ${SWINGFOX_API_URL:-http://backend:3001/api}
+      TELEGRAM_PROXY: ${TELEGRAM_PROXY:-}
+      TELEGRAM_API_BASE_URL: ${TELEGRAM_API_BASE_URL:-https://api.telegram.org}
+      SWINGFOX_API_URL: ${SWINGFOX_API_URL:-http://127.0.0.1:3001/api}
       SWINGFOX_UPLOADS_URL: ${SWINGFOX_UPLOADS_URL:-https://swingfox.ru/uploads}
       PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-https://swingfox.ru}
-    networks:
-      - swingfox_default
-
-networks:
-  swingfox_default:
-    external: true

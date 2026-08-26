@@ -76,5 +76,10 @@ jobs:
             else
               bash "$DEPLOY_PATH/scripts/redeploy.sh" build
             fi
+<<<<<<< HEAD
+=======
+            docker-compose ps
+            docker-compose logs --tail 20
+>>>>>>> origin/master
 
             echo "Telegram bot deploy complete"
