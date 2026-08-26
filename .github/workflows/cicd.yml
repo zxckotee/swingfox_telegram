@@ -63,6 +63,8 @@ jobs:
 
             export TELEGRAM_SECRET='${{ secrets.TELEGRAM_SECRET }}'
             export TELEGRAM_BOT_SHARED_SECRET='${{ secrets.TELEGRAM_BOT_SHARED_SECRET }}'
+            export TELEGRAM_PROXY='${{ secrets.TELEGRAM_PROXY }}'
+            export TELEGRAM_API_BASE_URL='${{ secrets.TELEGRAM_API_BASE_URL }}'
             export SWINGFOX_API_URL='http://backend:3001/api'
             export SWINGFOX_UPLOADS_URL='https://swingfox.ru/uploads'
             export PUBLIC_WEB_URL='https://swingfox.ru'
