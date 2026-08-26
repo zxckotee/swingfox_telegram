@@ -70,9 +70,21 @@ GitHub показывает workflow только если файл **есть �
 
 ---
 
+## Сеть
+
+Бот использует **`network_mode: host`** (как старый `python main.py` на сервере):
+- Telegram API — через сеть хоста
+- SwingFox backend — `http://127.0.0.1:3001/api` (prod backend слушает на loopback)
+
+Если Telegram API недоступен даже с хоста — добавьте **`TELEGRAM_PROXY`**.
+
 ## Проверка на сервере
 
 ```bash
-docker ps | grep telegram
+curl -I --max-time 10 https://api.telegram.org
+curl -s http://127.0.0.1:3001/api/status
+docker-compose -f /root/swingfox_telegram/docker-compose.yml up -d --build
 docker logs swingfox_telegram_bot --tail 30
 ```
+
+Ожидаем в логах: `Connected to Telegram as @YourBot`
