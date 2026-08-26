@@ -65,14 +65,11 @@ jobs:
             export TELEGRAM_BOT_SHARED_SECRET='${{ secrets.TELEGRAM_BOT_SHARED_SECRET }}'
             export TELEGRAM_PROXY='${{ secrets.TELEGRAM_PROXY }}'
             export TELEGRAM_API_BASE_URL='${{ secrets.TELEGRAM_API_BASE_URL }}'
-            export SWINGFOX_API_URL='http://backend:3001/api'
+            export SWINGFOX_API_URL='http://127.0.0.1:3001/api'
             export SWINGFOX_UPLOADS_URL='https://swingfox.ru/uploads'
             export PUBLIC_WEB_URL='https://swingfox.ru'
 
             bash scripts/write-env-from-ci.sh "$DEPLOY_PATH"
-
-            docker network inspect swingfox_default >/dev/null 2>&1 \
-              || { echo "ERROR: network swingfox_default not found. Deploy swingfox first."; exit 1; }
 
             if [ "$SKIP_BUILD" = "true" ]; then
               docker-compose up -d --remove-orphans
@@ -80,5 +77,6 @@ jobs:
               docker-compose up -d --build --remove-orphans
             fi
             docker-compose ps
+            docker-compose logs --tail 20
 
             echo "Telegram bot deploy complete"
