@@ -10,6 +10,9 @@ services:
     build: .
     container_name: swingfox_telegram_bot
     restart: unless-stopped
+    # If bridge network cannot reach api.telegram.org, uncomment:
+    # network_mode: host
+    # and set SWINGFOX_API_URL=http://127.0.0.1:3001/api
     environment:
       TELEGRAM_SECRET: ${TELEGRAM_SECRET}
       TELEGRAM_BOT_SHARED_SECRET: ${TELEGRAM_BOT_SHARED_SECRET}
