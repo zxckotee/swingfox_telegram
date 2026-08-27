@@ -9,12 +9,19 @@ cd "$ROOT_DIR"
 BUILD="${1:-build}"
 
 echo ">>> Stop and remove old telegram bot containers"
-docker-compose stop telegram-bot 2>/dev/null || true
-docker-compose rm -f -v telegram-bot 2>/dev/null || true
+set +e
+docker-compose stop telegram-bot 2>/dev/null
+docker rm -f swingfox_telegram_bot 2>/dev/null
 
-docker ps -a --format '{{.Names}}' | grep -E 'swingfox_telegram_bot|telegram-bot' | while read -r name; do
-  docker rm -f "$name" 2>/dev/null || true
-done
+while IFS= read -r cid; do
+  [ -n "$cid" ] && docker rm -f "$cid" 2>/dev/null
+done < <(docker ps -aq --filter "name=swingfox_telegram" 2>/dev/null)
+
+while IFS= read -r name; do
+  [ -n "$name" ] && docker rm -f "$name" 2>/dev/null
+done < <(docker ps -a --format '{{.Names}}' 2>/dev/null | grep -E 'swingfox_telegram|telegram-bot' || true)
+
+set -e
 
 echo ">>> Start telegram bot"
 if [ "$BUILD" = "build" ]; then
