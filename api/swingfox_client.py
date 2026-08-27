@@ -166,5 +166,9 @@ class SwingfoxAPIError(Exception):
         self.status_code = status_code
         self.payload = payload
         self.error = payload.get('error', 'unknown')
-        self.message = payload.get('message', 'API error')
+        self.message = (
+            payload.get('message')
+            or payload.get('error')
+            or f'HTTP {status_code}'
+        )
         super().__init__(self.message)

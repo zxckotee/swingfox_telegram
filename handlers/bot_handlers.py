@@ -35,11 +35,24 @@ class BotHandlers:
         self.api = api
         self.tg = TelegramClient()
 
+    @staticmethod
+    def _parse_link_start(text: str) -> Optional[str]:
+        """Parse /start link_CODE or /start@BotName link_CODE from Telegram deep link."""
+        parts = text.strip().split(maxsplit=1)
+        if not parts or not parts[0].startswith('/start'):
+            return None
+        if len(parts) < 2:
+            return None
+        payload = parts[1].strip()
+        if payload.startswith('link_'):
+            return payload[5:]
+        return None
+
     def handle_start(self, chat_id: int, user_id: int, text: str, username: Optional[str]) -> None:
-        if text.startswith('/start link_'):
-            code = text.replace('/start link_', '', 1).strip()
+        link_code = self._parse_link_start(text)
+        if link_code is not None:
             try:
-                data = self.api.complete_link(user_id, code, username)
+                data = self.api.complete_link(user_id, link_code, username)
                 login = data.get('user', {}).get('login', '')
                 self.tg.send_message(
                     chat_id,
