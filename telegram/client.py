@@ -4,6 +4,9 @@ from typing import Any, Dict, List, Optional
 
 import requests
 from dotenv import load_dotenv
+from requests.exceptions import ConnectionError as RequestsConnectionError
+from requests.exceptions import ReadTimeout, RequestException
+from urllib3.exceptions import ProtocolError
 
 load_dotenv()
 
@@ -11,11 +14,12 @@ TOKEN = os.getenv('TELEGRAM_SECRET', '').strip()
 API_BASE = os.getenv('TELEGRAM_API_BASE_URL', 'https://api.telegram.org').rstrip('/')
 BASE_URL = f'{API_BASE}/bot{TOKEN}' if TOKEN else ''
 
-# Optional proxy — same env as before, applied per-request like legacy host setup + export http_proxy
 PROXIES = None
 _proxy_url = os.getenv('TELEGRAM_PROXY', '').strip()
 if _proxy_url:
     PROXIES = {'http': _proxy_url, 'https': _proxy_url}
+
+POST_RETRIES = 3
 
 
 def _sanitize_error(message: str) -> str:
@@ -24,13 +28,21 @@ def _sanitize_error(message: str) -> str:
     return message
 
 
-class TelegramClient:
-    """Telegram Bot API client.
+def _is_transient_poll_error(exc: BaseException) -> bool:
+    text = str(exc).lower()
+    markers = (
+        'remote end closed connection',
+        'connection aborted',
+        'connection reset',
+        'read timed out',
+        'network is unreachable',
+        'failed to establish a new connection',
+    )
+    return any(m in text for m in markers)
 
-    Long polling (getUpdates) intentionally mirrors the legacy tg_methods.py:
-    plain requests.get/post without requests-level timeout, because Telegram
-    holds the HTTP connection open for `timeout` seconds on their side.
-    """
+
+class TelegramClient:
+    """Telegram Bot API client with legacy-style long polling."""
 
     @staticmethod
     def create_reply_keyboard(buttons: List[List[str]], resize_keyboard: bool = True) -> dict:
@@ -42,6 +54,28 @@ class TelegramClient:
     @staticmethod
     def create_inline_keyboard(rows: List[List[dict]]) -> dict:
         return {'inline_keyboard': rows}
+
+    def _post(self, path: str, payload: Dict[str, Any]) -> dict:
+        last_error: Optional[Exception] = None
+        for attempt in range(POST_RETRIES):
+            try:
+                response = requests.post(
+                    f'{BASE_URL}/{path}',
+                    data=payload,
+                    proxies=PROXIES,
+                    timeout=(15, 60)
+                )
+                data = response.json()
+                if not data.get('ok', True):
+                    description = data.get('description') or 'Telegram API error'
+                    raise RuntimeError(_sanitize_error(str(description)))
+                return data
+            except (RequestException, ProtocolError, RuntimeError) as exc:
+                last_error = exc
+                if attempt + 1 < POST_RETRIES and _is_transient_poll_error(exc):
+                    continue
+                raise RuntimeError(_sanitize_error(str(exc))) from exc
+        raise RuntimeError(_sanitize_error(str(last_error))) from last_error
 
     def send_message(
         self,
@@ -58,12 +92,7 @@ class TelegramClient:
             payload['parse_mode'] = parse_mode
         if reply_markup:
             payload['reply_markup'] = json.dumps(reply_markup)
-        response = requests.post(
-            f'{BASE_URL}/sendMessage',
-            data=payload,
-            proxies=PROXIES
-        )
-        return response.json()
+        return self._post('sendMessage', payload)
 
     def send_photo(self, chat_id: int, photo_url: str, caption: str = '', reply_markup: Optional[dict] = None) -> dict:
         payload: Dict[str, Any] = {
@@ -74,23 +103,16 @@ class TelegramClient:
         }
         if reply_markup:
             payload['reply_markup'] = json.dumps(reply_markup)
-        response = requests.post(
-            f'{BASE_URL}/sendPhoto',
-            data=payload,
-            proxies=PROXIES
-        )
-        return response.json()
+        return self._post('sendPhoto', payload)
 
     def answer_callback_query(self, callback_query_id: str, text: str = '', show_alert: bool = False) -> dict:
-        response = requests.post(f'{BASE_URL}/answerCallbackQuery', data={
+        return self._post('answerCallbackQuery', {
             'callback_query_id': callback_query_id,
             'text': text,
             'show_alert': show_alert
-        }, proxies=PROXIES)
-        return response.json()
+        })
 
     def get_updates(self, offset: Optional[int] = None, timeout: int = 30) -> list:
-        """Long polling — same pattern as legacy tg_methods.get_updates()."""
         params: Dict[str, Any] = {
             'timeout': timeout,
             'allowed_updates': ['message', 'callback_query']
@@ -102,21 +124,25 @@ class TelegramClient:
             response = requests.get(
                 f'{BASE_URL}/getUpdates',
                 params=params,
-                proxies=PROXIES
+                proxies=PROXIES,
+                timeout=(15, timeout + 20)
             )
-            return response.json().get('result', [])
-        except requests.RequestException as exc:
+            data = response.json()
+            if not data.get('ok', True):
+                description = data.get('description') or 'getUpdates failed'
+                raise RuntimeError(_sanitize_error(str(description)))
+            return data.get('result', [])
+        except (RequestException, ProtocolError, ReadTimeout, RequestsConnectionError) as exc:
+            if _is_transient_poll_error(exc):
+                return []
             raise RuntimeError(_sanitize_error(str(exc))) from exc
 
     def check_connection(self) -> dict:
-        try:
-            response = requests.get(f'{BASE_URL}/getMe', proxies=PROXIES, timeout=30)
-            data = response.json()
-            if not data.get('ok'):
-                raise RuntimeError(data.get('description') or 'getMe failed')
-            return data.get('result', {})
-        except requests.RequestException as exc:
-            raise RuntimeError(_sanitize_error(str(exc))) from exc
+        response = requests.get(f'{BASE_URL}/getMe', proxies=PROXIES, timeout=30)
+        data = response.json()
+        if not data.get('ok'):
+            raise RuntimeError(data.get('description') or 'getMe failed')
+        return data.get('result', {})
 
     @staticmethod
     def main_menu_keyboard() -> dict:

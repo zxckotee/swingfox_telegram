@@ -50,6 +50,13 @@ class BotHandlers:
                 session_store.clear(user_id)
             except SwingfoxAPIError as e:
                 self.tg.send_message(chat_id, f"❌ {e.message}")
+            except Exception as e:
+                print(f'Link complete failed for {user_id}: {e}')
+                self.tg.send_message(
+                    chat_id,
+                    "❌ Не удалось привязать аккаунт. Проверьте, что ссылка свежая (15 мин) "
+                    "и backend доступен боту."
+                )
             return
 
         if not self.api.get_token(user_id):

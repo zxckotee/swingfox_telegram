@@ -52,7 +52,13 @@ class SwingfoxClient:
                 headers['Authorization'] = f'Bearer {token}'
 
         url = f"{self.api_url}{path}"
-        response = requests.request(method, url, headers=headers, json=json, timeout=30)
+        try:
+            response = requests.request(method, url, headers=headers, json=json, timeout=30)
+        except requests.RequestException as exc:
+            raise SwingfoxAPIError(503, {
+                'error': 'backend_unreachable',
+                'message': f'Backend недоступен: {exc}'
+            }) from exc
         data = {}
         try:
             data = response.json()
