@@ -37,6 +37,12 @@ class SwingfoxClient:
     def get_token(self, telegram_id: int) -> Optional[str]:
         return self._tokens.get(int(telegram_id))
 
+    def ensure_authenticated(self, telegram_id: int) -> bool:
+        """Restore JWT from backend after bot restart (telegram_id stays in DB)."""
+        if self.get_token(telegram_id):
+            return True
+        return self.refresh_token(telegram_id)
+
     def _sign(self, telegram_id: int) -> Dict[str, Any]:
         ts = int(time.time())
         payload = f"{telegram_id}:{ts}"
