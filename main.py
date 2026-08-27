@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from requests.exceptions import RequestException
 
 from api.swingfox_client import SwingfoxClient, SwingfoxAPIError
+from config.backend import get_backend_config
 from handlers.bot_handlers import BotHandlers
 from telegram.client import TelegramClient, _is_transient_poll_error
 
@@ -46,11 +47,14 @@ def _process_update(handlers: BotHandlers, update: dict) -> None:
 
 
 def run_polling() -> None:
+    backend = get_backend_config()
     api = SwingfoxClient()
     handlers = BotHandlers(api)
     tg = TelegramClient()
 
+    env_label = 'production' if backend['production'] else 'staging'
     print('SwingFox Telegram bot started (polling)...')
+    print(f'Backend: {env_label} → {backend["api_url"]}')
 
     try:
         me = tg.check_connection()

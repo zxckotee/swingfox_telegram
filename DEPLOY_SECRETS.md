@@ -70,11 +70,32 @@ GitHub показывает workflow только если файл **есть �
 
 ---
 
+## Backend: prod / staging
+
+Переключатель **`PRODUCTION`** в `.env`:
+
+| `PRODUCTION` | Backend API | Сайт |
+|---|---|---|
+| `off` *(default)* | `https://127.0.0.1:3002/api` (staging) | `https://swingfox.ru/stagging` |
+| `on` | `https://127.0.0.1:3001/api` (prod) | `https://swingfox.ru` |
+
+```bash
+# staging (по умолчанию)
+PRODUCTION=off
+
+# production
+PRODUCTION=on
+```
+
+Явные `SWINGFOX_API_URL`, `SWINGFOX_UPLOADS_URL`, `PUBLIC_WEB_URL` переопределяют значения по умолчанию.
+
+---
+
 ## Сеть
 
 Бот использует **`network_mode: host`** (как старый `python main.py` на сервере):
 - Telegram API — через сеть хоста
-- SwingFox backend — `https://127.0.0.1:3001/api` (prod backend слушает HTTPS на loopback)
+- SwingFox backend — loopback HTTPS (`3002` staging, `3001` prod)
 
 Если Telegram API недоступен даже с хоста — добавьте **`TELEGRAM_PROXY`**.
 
@@ -82,9 +103,14 @@ GitHub показывает workflow только если файл **есть �
 
 ```bash
 curl -I --max-time 10 https://api.telegram.org
-curl -sk https://127.0.0.1:3001/api/status
+curl -sk https://127.0.0.1:3002/api/status   # staging
+curl -sk https://127.0.0.1:3001/api/status   # prod
 docker-compose -f /root/swingfox_telegram/docker-compose.yml up -d --build
 docker logs swingfox_telegram_bot --tail 30
 ```
 
-Ожидаем в логах: `Connected to Telegram as @YourBot`
+Ожидаем в логах:
+```
+Backend: staging → https://127.0.0.1:3002/api
+Connected to Telegram as @YourBot
+```

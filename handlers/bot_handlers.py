@@ -2,11 +2,13 @@ import os
 from typing import Optional
 
 from api.swingfox_client import SwingfoxAPIError, SwingfoxClient
+from config.backend import get_backend_config
 from state.session_store import session_store
 from telegram.client import TelegramClient
 
-UPLOADS_URL = (os.getenv('SWINGFOX_UPLOADS_URL') or 'https://swingfox.ru/uploads').rstrip('/')
-SITE_URL = os.getenv('PUBLIC_WEB_URL', 'https://swingfox.ru')
+_backend = get_backend_config()
+UPLOADS_URL = _backend['uploads_url']
+SITE_URL = _backend['web_url']
 
 
 def avatar_url(filename: Optional[str]) -> Optional[str]:

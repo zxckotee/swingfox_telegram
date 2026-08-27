@@ -17,6 +17,14 @@ on:
         required: false
         default: false
         type: boolean
+      production:
+        description: "PRODUCTION=on для prod backend, off для staging (по умолчанию off)"
+        required: false
+        default: "off"
+        type: choice
+        options:
+          - "off"
+          - "on"
 
 jobs:
   deploy:
@@ -65,9 +73,7 @@ jobs:
             export TELEGRAM_BOT_SHARED_SECRET='${{ secrets.TELEGRAM_BOT_SHARED_SECRET }}'
             export TELEGRAM_PROXY='${{ secrets.TELEGRAM_PROXY }}'
             export TELEGRAM_API_BASE_URL='${{ secrets.TELEGRAM_API_BASE_URL }}'
-            export SWINGFOX_API_URL='https://127.0.0.1:3001/api'
-            export SWINGFOX_UPLOADS_URL='https://swingfox.ru/uploads'
-            export PUBLIC_WEB_URL='https://swingfox.ru'
+            export PRODUCTION='${{ github.event.inputs.production || 'off' }}'
 
             bash scripts/write-env-from-ci.sh "$DEPLOY_PATH"
 
