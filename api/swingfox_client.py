@@ -9,12 +9,15 @@ from urllib.parse import urlparse
 import requests
 from urllib3.exceptions import InsecureRequestWarning
 
+from config.backend import get_backend_config
+
 
 class SwingfoxClient:
     """HTTP-клиент SwingFox API. Без auth/password — только пользовательский JWT."""
 
     def __init__(self, api_url: Optional[str] = None, shared_secret: Optional[str] = None):
-        self.api_url = (api_url or os.getenv('SWINGFOX_API_URL', 'https://swingfox.ru/api')).rstrip('/')
+        backend = get_backend_config()
+        self.api_url = (api_url or backend['api_url']).rstrip('/')
         self.shared_secret = shared_secret or os.getenv('TELEGRAM_BOT_SHARED_SECRET', '')
         self._tokens: Dict[int, str] = {}
         self._verify_ssl = self._resolve_ssl_verify()

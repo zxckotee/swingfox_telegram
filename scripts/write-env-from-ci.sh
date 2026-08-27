@@ -7,15 +7,30 @@ ENV_FILE="$TARGET_DIR/.env"
 
 mkdir -p "$TARGET_DIR"
 
+PRODUCTION="${PRODUCTION:-off}"
+case "${PRODUCTION,,}" in
+  1|true|yes|on)
+    DEFAULT_API_URL='https://127.0.0.1:3001/api'
+    DEFAULT_UPLOADS_URL='https://swingfox.ru/uploads'
+    DEFAULT_WEB_URL='https://swingfox.ru'
+    ;;
+  *)
+    DEFAULT_API_URL='https://127.0.0.1:3002/api'
+    DEFAULT_UPLOADS_URL='https://swingfox.ru/stagging/uploads'
+    DEFAULT_WEB_URL='https://swingfox.ru/stagging'
+    ;;
+esac
+
 cat > "$ENV_FILE" <<EOF
 TELEGRAM_SECRET=${TELEGRAM_SECRET:-}
 TELEGRAM_BOT_SHARED_SECRET=${TELEGRAM_BOT_SHARED_SECRET:-}
 TELEGRAM_PROXY=${TELEGRAM_PROXY:-}
 TELEGRAM_API_BASE_URL=${TELEGRAM_API_BASE_URL:-https://api.telegram.org}
-SWINGFOX_API_URL=${SWINGFOX_API_URL:-https://127.0.0.1:3001/api}
-SWINGFOX_UPLOADS_URL=${SWINGFOX_UPLOADS_URL:-https://swingfox.ru/uploads}
-PUBLIC_WEB_URL=${PUBLIC_WEB_URL:-https://swingfox.ru}
+PRODUCTION=${PRODUCTION}
+SWINGFOX_API_URL=${SWINGFOX_API_URL:-$DEFAULT_API_URL}
+SWINGFOX_UPLOADS_URL=${SWINGFOX_UPLOADS_URL:-$DEFAULT_UPLOADS_URL}
+PUBLIC_WEB_URL=${PUBLIC_WEB_URL:-$DEFAULT_WEB_URL}
 EOF
 
 chmod 600 "$ENV_FILE"
-echo "Wrote $ENV_FILE"
+echo "Wrote $ENV_FILE (PRODUCTION=${PRODUCTION})"
