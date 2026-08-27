@@ -41,7 +41,7 @@
    curl -I --max-time 10 https://api.telegram.org
    docker exec swingfox_telegram_bot curl -I --max-time 10 https://api.telegram.org
    ```
-2. Если с хоста работает, а из контейнера нет — в `docker-compose.yml` раскомментируйте `network_mode: host` и задайте `SWINGFOX_API_URL=http://127.0.0.1:3001/api`
+2. Если с хоста работает, а из контейнера нет — в `docker-compose.yml` раскомментируйте `network_mode: host` и задайте `SWINGFOX_API_URL=https://127.0.0.1:3001/api`
 3. Если нигде не открывается — добавьте **`TELEGRAM_PROXY`**
 4. Перезапустите деплой бота
 
@@ -74,7 +74,7 @@ GitHub показывает workflow только если файл **есть �
 
 Бот использует **`network_mode: host`** (как старый `python main.py` на сервере):
 - Telegram API — через сеть хоста
-- SwingFox backend — `http://127.0.0.1:3001/api` (prod backend слушает на loopback)
+- SwingFox backend — `https://127.0.0.1:3001/api` (prod backend слушает HTTPS на loopback)
 
 Если Telegram API недоступен даже с хоста — добавьте **`TELEGRAM_PROXY`**.
 
@@ -82,7 +82,7 @@ GitHub показывает workflow только если файл **есть �
 
 ```bash
 curl -I --max-time 10 https://api.telegram.org
-curl -s http://127.0.0.1:3001/api/status
+curl -sk https://127.0.0.1:3001/api/status
 docker-compose -f /root/swingfox_telegram/docker-compose.yml up -d --build
 docker logs swingfox_telegram_bot --tail 30
 ```

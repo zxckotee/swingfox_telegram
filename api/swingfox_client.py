@@ -2,9 +2,12 @@ import hashlib
 import hmac
 import os
 import time
+import warnings
 from typing import Any, Dict, Optional
+from urllib.parse import urlparse
 
 import requests
+from urllib3.exceptions import InsecureRequestWarning
 
 
 class SwingfoxClient:
@@ -14,6 +17,16 @@ class SwingfoxClient:
         self.api_url = (api_url or os.getenv('SWINGFOX_API_URL', 'https://swingfox.ru/api')).rstrip('/')
         self.shared_secret = shared_secret or os.getenv('TELEGRAM_BOT_SHARED_SECRET', '')
         self._tokens: Dict[int, str] = {}
+        self._verify_ssl = self._resolve_ssl_verify()
+
+    def _resolve_ssl_verify(self) -> bool:
+        explicit = os.getenv('SWINGFOX_API_VERIFY')
+        if explicit is not None:
+            return explicit.lower() in ('1', 'true', 'yes')
+        host = (urlparse(self.api_url).hostname or '').lower()
+        if host in ('127.0.0.1', 'localhost', '::1'):
+            return False
+        return True
 
     def set_token(self, telegram_id: int, token: str) -> None:
         self._tokens[int(telegram_id)] = token
@@ -52,8 +65,12 @@ class SwingfoxClient:
                 headers['Authorization'] = f'Bearer {token}'
 
         url = f"{self.api_url}{path}"
+        if not self._verify_ssl:
+            warnings.filterwarnings('ignore', category=InsecureRequestWarning)
         try:
-            response = requests.request(method, url, headers=headers, json=json, timeout=30)
+            response = requests.request(
+                method, url, headers=headers, json=json, timeout=30, verify=self._verify_ssl
+            )
         except requests.RequestException as exc:
             raise SwingfoxAPIError(503, {
                 'error': 'backend_unreachable',
