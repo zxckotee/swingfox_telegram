@@ -50,6 +50,30 @@ class BotHandlers:
             return payload[5:]
         return None
 
+    def _welcome_back(self, chat_id: int, message: str = "С возвращением! Выберите действие в меню.") -> None:
+        self.tg.send_message(
+            chat_id,
+            message,
+            reply_markup=self.tg.main_menu_keyboard()
+        )
+
+    def _prompt_link(self, chat_id: int) -> None:
+        self.tg.send_message(
+            chat_id,
+            "👋 Привет! Чтобы пользоваться ботом, привяжите аккаунт SwingFox.\n\n"
+            "Откройте профиль на сайте → раздел «Telegram-бот» → получите ссылку и нажмите её.",
+            reply_markup={'remove_keyboard': True}
+        )
+
+    def _require_auth(self, chat_id: int, user_id: int) -> bool:
+        if self.api.ensure_authenticated(user_id):
+            return True
+        self.tg.send_message(
+            chat_id,
+            "Сначала привяжите аккаунт через ссылку из профиля на swingfox.ru"
+        )
+        return False
+
     def handle_start(self, chat_id: int, user_id: int, text: str, username: Optional[str]) -> None:
         link_code = self._parse_link_start(text)
         if link_code is not None:
@@ -64,7 +88,13 @@ class BotHandlers:
                 )
                 session_store.clear(user_id)
             except SwingfoxAPIError as e:
-                self.tg.send_message(chat_id, f"❌ {e.message}")
+                if e.error == 'telegram_already_linked' and self.api.refresh_token(user_id):
+                    self._welcome_back(
+                        chat_id,
+                        "✅ Telegram уже был привязан — сессия восстановлена.\n\nВыберите действие в меню."
+                    )
+                else:
+                    self.tg.send_message(chat_id, f"❌ {e.message}")
             except Exception as e:
                 print(f'Link complete failed for {user_id}: {e}')
                 self.tg.send_message(
@@ -74,24 +104,14 @@ class BotHandlers:
                 )
             return
 
-        if not self.api.get_token(user_id):
-            self.tg.send_message(
-                chat_id,
-                "👋 Привет! Чтобы пользоваться ботом, привяжите аккаунт SwingFox.\n\n"
-                "Откройте профиль на сайте → раздел «Telegram-бот» → получите ссылку и нажмите её.",
-                reply_markup={'remove_keyboard': True}
-            )
+        if self.api.ensure_authenticated(user_id):
+            self._welcome_back(chat_id)
             return
 
-        self.tg.send_message(
-            chat_id,
-            "С возвращением! Выберите действие в меню.",
-            reply_markup=self.tg.main_menu_keyboard()
-        )
+        self._prompt_link(chat_id)
 
     def handle_text(self, chat_id: int, user_id: int, text: str) -> None:
-        if not self.api.get_token(user_id):
-            self.tg.send_message(chat_id, "Сначала привяжите аккаунт через ссылку из профиля на swingfox.ru")
+        if not self._require_auth(chat_id, user_id):
             return
 
         if text == '🔥 Анкеты':
@@ -220,7 +240,7 @@ class BotHandlers:
         user_id = callback_query['from']['id']
         data = callback_query.get('data', '')
 
-        if not self.api.get_token(user_id):
+        if not self.api.ensure_authenticated(user_id):
             self.tg.answer_callback_query(cb_id, 'Привяжите аккаунт на сайте', show_alert=True)
             return
 
@@ -260,6 +280,8 @@ class BotHandlers:
             )
         elif error.error in ('invalid_token', 'token_expired', 'not_linked'):
             self.api._tokens.pop(user_id, None)
+            if self.api.ensure_authenticated(user_id):
+                return
             self.tg.send_message(
                 chat_id,
                 "Сессия устарела. Перепривяжите Telegram через ссылку в профиле на сайте."
