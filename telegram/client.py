@@ -112,6 +112,41 @@ class TelegramClient:
             'show_alert': show_alert
         })
 
+    def edit_message_reply_markup(
+        self,
+        chat_id: int,
+        message_id: int,
+        reply_markup: Optional[dict] = None
+    ) -> dict:
+        payload: Dict[str, Any] = {
+            'chat_id': chat_id,
+            'message_id': message_id
+        }
+        if reply_markup is not None:
+            payload['reply_markup'] = json.dumps(reply_markup)
+        return self._post('editMessageReplyMarkup', payload)
+
+    def get_file(self, file_id: str) -> dict:
+        response = requests.get(
+            f'{BASE_URL}/getFile',
+            params={'file_id': file_id},
+            proxies=PROXIES,
+            timeout=30
+        )
+        data = response.json()
+        if not data.get('ok'):
+            raise RuntimeError(data.get('description') or 'getFile failed')
+        return data.get('result', {})
+
+    def download_file(self, file_path: str) -> bytes:
+        response = requests.get(
+            f'{API_BASE}/file/bot{TOKEN}/{file_path}',
+            proxies=PROXIES,
+            timeout=60
+        )
+        response.raise_for_status()
+        return response.content
+
     def get_updates(self, offset: Optional[int] = None, timeout: int = 30) -> list:
         params: Dict[str, Any] = {
             'timeout': timeout,
@@ -149,5 +184,6 @@ class TelegramClient:
         return TelegramClient.create_reply_keyboard([
             ['🔥 Анкеты', '🔔 Уведомления'],
             ['💬 Чаты', '🎪 Клубы'],
-            ['📢 Объявления', '🌐 ЛК на сайте']
+            ['📢 Объявления', '👤 Мой профиль'],
+            ['🌐 ЛК на сайте']
         ])

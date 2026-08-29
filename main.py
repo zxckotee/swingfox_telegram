@@ -30,6 +30,8 @@ def _process_update(handlers: BotHandlers, update: dict) -> None:
                 handlers.handle_start(chat_id, user_id, text.strip(), username)
             elif text:
                 handlers.handle_text(chat_id, user_id, text.strip())
+            elif msg.get('photo'):
+                handlers.handle_photo(chat_id, user_id, msg['photo'])
 
         elif 'callback_query' in update:
             handlers.handle_callback(update['callback_query'])

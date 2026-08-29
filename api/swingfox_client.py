@@ -1,5 +1,7 @@
+import base64
 import hashlib
 import hmac
+import json
 import os
 import time
 import warnings
@@ -33,6 +35,35 @@ class SwingfoxClient:
 
     def set_token(self, telegram_id: int, token: str) -> None:
         self._tokens[int(telegram_id)] = token
+        login = self._login_from_jwt(token)
+        if login:
+            from state.session_store import session_store
+            session_store.set_login(telegram_id, login)
+
+    @staticmethod
+    def _login_from_jwt(token: str) -> Optional[str]:
+        try:
+            parts = token.split('.')
+            if len(parts) < 2:
+                return None
+            pad = '=' * (-len(parts[1]) % 4)
+            payload = json.loads(base64.urlsafe_b64decode(parts[1] + pad))
+            return payload.get('login')
+        except Exception:
+            return None
+
+    def resolve_login(self, telegram_id: int) -> Optional[str]:
+        from state.session_store import session_store
+        login = session_store.get_login(telegram_id)
+        if login:
+            return login
+        token = self.get_token(telegram_id)
+        if token:
+            login = self._login_from_jwt(token)
+            if login:
+                session_store.set_login(telegram_id, login)
+            return login
+        return None
 
     def get_token(self, telegram_id: int) -> Optional[str]:
         return self._tokens.get(int(telegram_id))
@@ -127,17 +158,26 @@ class SwingfoxClient:
             return False
         return False
 
-    def web_login_code(self, telegram_id: int) -> dict:
+    def web_login_code(self, telegram_id: int, redirect_to: Optional[str] = None) -> dict:
         body = self._sign(telegram_id)
+        if redirect_to:
+            body['redirect_to'] = redirect_to
         return self._request('POST', '/telegram/web-login-code', None, json=body, auth=False)
 
-    def get_swipe_profiles(self, telegram_id: int) -> list:
-        data = self._request('GET', '/swipe/profiles', telegram_id)
+    def get_swipe_profile(self, telegram_id: int, direction: str = 'forward') -> Optional[dict]:
+        data = self._request('GET', f'/swipe/profiles?direction={direction}', telegram_id)
         if isinstance(data, list):
-            return data
+            return data[0] if data else None
         if isinstance(data, dict) and data.get('login'):
-            return [data]
-        return data.get('profiles', []) if isinstance(data, dict) else []
+            return data
+        if isinstance(data, dict):
+            profiles = data.get('profiles') or []
+            return profiles[0] if profiles else None
+        return None
+
+    def get_swipe_profiles(self, telegram_id: int) -> list:
+        profile = self.get_swipe_profile(telegram_id)
+        return [profile] if profile else []
 
     def like(self, telegram_id: int, target_user: str) -> dict:
         return self._request('POST', '/swipe/like', telegram_id, json={
@@ -152,7 +192,59 @@ class SwingfoxClient:
         })
 
     def get_profile(self, telegram_id: int, login: str) -> dict:
-        return self._request('GET', f'/profiles/{login}', telegram_id)
+        return self._request('GET', f'/users/profile/{login}', telegram_id)
+
+    def get_my_profile(self, telegram_id: int) -> dict:
+        login = self.resolve_login(telegram_id)
+        if not login:
+            raise SwingfoxAPIError(400, {
+                'error': 'no_login',
+                'message': 'Не удалось определить логин пользователя'
+            })
+        return self.get_profile(telegram_id, login)
+
+    def update_profile(self, telegram_id: int, fields: Dict[str, Any]) -> dict:
+        current = self.get_my_profile(telegram_id)
+        payload = {
+            'country': fields.get('country', current.get('country')),
+            'city': fields.get('city', current.get('city')),
+            'status': fields.get('status', current.get('status')),
+            'search_status': fields.get('search_status', current.get('search_status')),
+            'search_age': fields.get('search_age', current.get('search_age')),
+            'location': fields.get('location', current.get('location')),
+            'mobile': fields.get('mobile', current.get('mobile')),
+            'info': fields.get('info', current.get('info')),
+            'date': fields.get('date', current.get('date')),
+            'height': fields.get('height', current.get('height')),
+            'weight': fields.get('weight', current.get('weight')),
+            'smoking': fields.get('smoking', current.get('smoking')),
+            'alko': fields.get('alko', current.get('alko')),
+        }
+        return self._request('PUT', '/users/profile', telegram_id, json=payload)
+
+    def upload_avatar(self, telegram_id: int, file_bytes: bytes, filename: str = 'avatar.jpg') -> dict:
+        token = self.get_token(telegram_id)
+        if not token:
+            raise SwingfoxAPIError(401, {'error': 'not_authenticated', 'message': 'Нет токена'})
+        headers = {'Authorization': f'Bearer {token}'}
+        url = f'{self.api_url}/users/upload-avatar'
+        if not self._verify_ssl:
+            warnings.filterwarnings('ignore', category=InsecureRequestWarning)
+        response = requests.post(
+            url,
+            headers=headers,
+            files={'avatar': (filename, file_bytes, 'image/jpeg')},
+            timeout=60,
+            verify=self._verify_ssl
+        )
+        data = {}
+        try:
+            data = response.json()
+        except Exception:
+            data = {}
+        if response.status_code >= 400:
+            raise SwingfoxAPIError(response.status_code, data)
+        return data
 
     def get_notifications(self, telegram_id: int, page: int = 1) -> dict:
         return self._request('GET', f'/notifications?page={page}&limit=10', telegram_id)
@@ -167,7 +259,13 @@ class SwingfoxClient:
         return self._request('GET', '/clubs', telegram_id)
 
     def get_ads(self, telegram_id: int) -> dict:
-        return self._request('GET', '/ads?limit=10', telegram_id)
+        return self._request('GET', '/ads?limit=20&telegram_bot=1', telegram_id)
+
+    def accept_game_invite(self, telegram_id: int, invite_id: str) -> dict:
+        return self._request('POST', f'/game/invites/{invite_id}/accept', telegram_id)
+
+    def decline_game_invite(self, telegram_id: int, invite_id: str) -> dict:
+        return self._request('POST', f'/game/invites/{invite_id}/decline', telegram_id)
 
 
 class SwingfoxAPIError(Exception):
