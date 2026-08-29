@@ -1,5 +1,5 @@
 import os
-from typing import Optional
+from typing import List, Optional
 
 from api.swingfox_client import SwingfoxAPIError, SwingfoxClient
 from config.backend import get_backend_config
@@ -9,6 +9,19 @@ from telegram.client import TelegramClient
 _backend = get_backend_config()
 UPLOADS_URL = _backend['uploads_url']
 SITE_URL = _backend['web_url']
+
+PROFILE_EDIT_FIELDS = {
+    'city': 'город',
+    'status': 'статус',
+    'info': 'о себе',
+    'search_status': 'кого ищу (через запятую)',
+    'search_age': 'возраст для поиска',
+    'mobile': 'контакт',
+    'height': 'рост',
+    'weight': 'вес',
+    'smoking': 'курение',
+    'alko': 'алкоголь',
+}
 
 
 def avatar_url(filename: Optional[str]) -> Optional[str]:
@@ -32,6 +45,20 @@ def format_profile_caption(profile: dict) -> str:
     return '\n'.join(x for x in parts if x)[:1024]
 
 
+def format_my_profile_caption(profile: dict) -> str:
+    lines = [
+        f"<b>Мой профиль — {profile.get('login', '—')}</b>",
+        f"Статус: {profile.get('status') or '—'}",
+        f"Город: {profile.get('city') or '—'}",
+        f"Кого ищу: {profile.get('search_status') or '—'}",
+        f"Возраст: {profile.get('search_age') or '—'}",
+        f"О себе: {(profile.get('info') or '—')[:200]}",
+    ]
+    if profile.get('mobile'):
+        lines.append(f"Контакт: {profile.get('mobile')}")
+    return '\n'.join(lines)[:1024]
+
+
 class BotHandlers:
     def __init__(self, api: SwingfoxClient):
         self.api = api
@@ -39,7 +66,6 @@ class BotHandlers:
 
     @staticmethod
     def _parse_link_start(text: str) -> Optional[str]:
-        """Parse /start link_CODE or /start@BotName link_CODE from Telegram deep link."""
         parts = text.strip().split(maxsplit=1)
         if not parts or not parts[0].startswith('/start'):
             return None
@@ -74,12 +100,30 @@ class BotHandlers:
         )
         return False
 
+    def _profile_search_ready(self, profile: dict) -> bool:
+        return bool((profile.get('search_status') or '').strip() and (profile.get('search_age') or '').strip())
+
+    def _clear_swipe_keyboard(self, user_id: int) -> None:
+        last = session_store.get_last_swipe_message(user_id)
+        if not last:
+            return
+        try:
+            self.tg.edit_message_reply_markup(
+                last['chat_id'],
+                last['message_id'],
+                {'inline_keyboard': []}
+            )
+        except Exception as exc:
+            print(f'Failed to clear swipe keyboard: {exc}')
+
     def handle_start(self, chat_id: int, user_id: int, text: str, username: Optional[str]) -> None:
         link_code = self._parse_link_start(text)
         if link_code is not None:
             try:
                 data = self.api.complete_link(user_id, link_code, username)
                 login = data.get('user', {}).get('login', '')
+                if login:
+                    session_store.set_login(user_id, login)
                 self.tg.send_message(
                     chat_id,
                     f"✅ Аккаунт <b>{login}</b> привязан!\n\nИспользуйте меню ниже.",
@@ -87,6 +131,7 @@ class BotHandlers:
                     parse_mode='HTML'
                 )
                 session_store.clear(user_id)
+                session_store.set_login(user_id, login)
             except SwingfoxAPIError as e:
                 if e.error == 'telegram_already_linked' and self.api.refresh_token(user_id):
                     self._welcome_back(
@@ -114,6 +159,12 @@ class BotHandlers:
         if not self._require_auth(chat_id, user_id):
             return
 
+        state = session_store.get_state(user_id)
+        if state and state.startswith('profile_edit:'):
+            field = state.split(':', 1)[1]
+            self._apply_profile_field(chat_id, user_id, field, text)
+            return
+
         if text == '🔥 Анкеты':
             self.show_next_profile(chat_id, user_id)
         elif text == '🔔 Уведомления':
@@ -123,28 +174,65 @@ class BotHandlers:
         elif text == '🎪 Клубы':
             self.show_clubs(chat_id, user_id)
         elif text == '📢 Объявления':
-            self.show_ads(chat_id, user_id)
+            self.show_ads(chat_id, user_id, page_index=0)
+        elif text == '👤 Мой профиль':
+            self.show_my_profile(chat_id, user_id)
         elif text == '🌐 ЛК на сайте':
             self.send_web_login(chat_id, user_id)
         else:
             self.tg.send_message(chat_id, "Выберите пункт меню 👇", reply_markup=self.tg.main_menu_keyboard())
 
-    def show_next_profile(self, chat_id: int, user_id: int) -> None:
+    def handle_photo(self, chat_id: int, user_id: int, photo_sizes: list) -> None:
+        if not self._require_auth(chat_id, user_id):
+            return
+        if session_store.get_state(user_id) != 'profile_edit:photo':
+            self.tg.send_message(chat_id, "Отправьте фото в разделе «Мой профиль» → «Фото».")
+            return
         try:
-            profiles = self.api.get_swipe_profiles(user_id)
-            if not profiles:
-                self.tg.send_message(chat_id, "Анкеты закончились. Загляните позже!")
-                return
-            profile = profiles[0]
-            login = profile.get('login') or profile.get('profile', {}).get('login')
-            caption = format_profile_caption({'profile': profile})
-            ava = avatar_url(profile.get('ava') or profile.get('profile', {}).get('ava'))
+            best = max(photo_sizes, key=lambda p: p.get('file_size', 0))
+            file_info = self.tg.get_file(best['file_id'])
+            content = self.tg.download_file(file_info['file_path'])
+            self.api.upload_avatar(user_id, content, 'avatar.jpg')
+            session_store.set_state(user_id, None)
+            self.tg.send_message(chat_id, "✅ Фото профиля обновлено.")
+            self.show_my_profile(chat_id, user_id)
+        except SwingfoxAPIError as e:
+            self.handle_api_error(chat_id, user_id, e)
+        except Exception as e:
+            print(f'Avatar upload failed: {e}')
+            self.tg.send_message(chat_id, "❌ Не удалось загрузить фото.")
+
+    def _apply_profile_field(self, chat_id: int, user_id: int, field: str, value: str) -> None:
+        try:
+            payload = {field: value.strip()}
+            if field == 'search_status':
+                payload['search_status'] = '&&'.join(
+                    part.strip() for part in value.split(',') if part.strip()
+                )
+            self.api.update_profile(user_id, payload)
+            session_store.set_state(user_id, None)
+            self.tg.send_message(chat_id, f"✅ Поле «{PROFILE_EDIT_FIELDS.get(field, field)}» обновлено.")
+            self.show_my_profile(chat_id, user_id)
+        except SwingfoxAPIError as e:
+            self.handle_api_error(chat_id, user_id, e)
+
+    def show_my_profile(self, chat_id: int, user_id: int) -> None:
+        try:
+            profile = self.api.get_my_profile(user_id)
+            caption = format_my_profile_caption(profile)
+            ava = avatar_url(profile.get('ava'))
             keyboard = self.tg.create_inline_keyboard([
-                [
-                    {'text': '❤️', 'callback_data': f'like:{login}'},
-                    {'text': '👎', 'callback_data': f'dislike:{login}'},
-                    {'text': '➡️', 'callback_data': 'swipe:next'}
-                ]
+                [{'text': 'Город', 'callback_data': 'profile:edit:city'},
+                 {'text': 'Статус', 'callback_data': 'profile:edit:status'}],
+                [{'text': 'О себе', 'callback_data': 'profile:edit:info'},
+                 {'text': 'Кого ищу', 'callback_data': 'profile:edit:search_status'}],
+                [{'text': 'Возраст', 'callback_data': 'profile:edit:search_age'},
+                 {'text': 'Контакт', 'callback_data': 'profile:edit:mobile'}],
+                [{'text': 'Рост', 'callback_data': 'profile:edit:height'},
+                 {'text': 'Вес', 'callback_data': 'profile:edit:weight'}],
+                [{'text': 'Курение', 'callback_data': 'profile:edit:smoking'},
+                 {'text': 'Алкоголь', 'callback_data': 'profile:edit:alko'}],
+                [{'text': '📷 Фото', 'callback_data': 'profile:edit:photo'}],
             ])
             if ava:
                 self.tg.send_photo(chat_id, ava, caption, reply_markup=keyboard)
@@ -152,6 +240,61 @@ class BotHandlers:
                 self.tg.send_message(chat_id, caption, reply_markup=keyboard, parse_mode='HTML')
         except SwingfoxAPIError as e:
             self.handle_api_error(chat_id, user_id, e)
+
+    def show_next_profile(self, chat_id: int, user_id: int, direction: str = 'forward') -> None:
+        try:
+            my_profile = {}
+            try:
+                my_profile = self.api.get_my_profile(user_id)
+            except SwingfoxAPIError:
+                pass
+
+            if direction == 'forward' and my_profile and not self._profile_search_ready(my_profile):
+                self.tg.send_message(
+                    chat_id,
+                    "⚠️ Заполните «кого ищу» и «возраст» в разделе «👤 Мой профиль», "
+                    "чтобы смотреть анкеты.",
+                    reply_markup=self.tg.create_inline_keyboard([
+                        [{'text': 'Открыть профиль', 'callback_data': 'profile:open'}]
+                    ])
+                )
+                return
+
+            profile = self.api.get_swipe_profile(user_id, direction=direction)
+            if not profile:
+                self.tg.send_message(chat_id, "Анкеты закончились. Загляните позже!")
+                return
+
+            login = profile.get('login') or profile.get('profile', {}).get('login')
+            caption = format_profile_caption({'profile': profile})
+            ava = avatar_url(profile.get('ava') or profile.get('profile', {}).get('ava'))
+
+            row1 = [
+                {'text': '❤️', 'callback_data': f'like:{login}'},
+                {'text': '👎', 'callback_data': f'dislike:{login}'},
+            ]
+            rows: List[list] = [row1]
+
+            tg_link = profile.get('telegram_link')
+            if tg_link:
+                rows.append([{'text': '📱 Telegram', 'url': tg_link}])
+
+            if (my_profile.get('viptype') or '') in ('VIP', 'PREMIUM'):
+                rows.append([{'text': '↩️ Назад', 'callback_data': 'swipe:back'}])
+
+            keyboard = self.tg.create_inline_keyboard(rows)
+            if ava:
+                sent = self.tg.send_photo(chat_id, ava, caption, reply_markup=keyboard)
+            else:
+                sent = self.tg.send_message(chat_id, caption, reply_markup=keyboard, parse_mode='HTML')
+            message = sent.get('result') or {}
+            if message.get('message_id'):
+                session_store.set_last_swipe_message(user_id, chat_id, message['message_id'])
+        except SwingfoxAPIError as e:
+            if e.error in ('no_previous', 'no_profiles'):
+                self.tg.send_message(chat_id, e.message)
+            else:
+                self.handle_api_error(chat_id, user_id, e)
 
     def show_notifications(self, chat_id: int, user_id: int) -> None:
         try:
@@ -178,11 +321,26 @@ class BotHandlers:
             for c in chats[:15]:
                 partner = c.get('companion') or c.get('partner') or c.get('login')
                 unread = c.get('unread_count', 0)
-                lines.append(f"• {partner}" + (f" ({unread} новых)" if unread else ''))
+                info = c.get('companion_info') or {}
+                tg_link = info.get('telegram_link')
+                tg_username = info.get('telegram_username')
+                line = f"• <b>{partner}</b>"
+                if unread:
+                    line += f" ({unread} новых)"
+                if tg_link:
+                    line += f"\n  📱 {tg_link}"
+                elif tg_username:
+                    line += f"\n  📱 @{tg_username}"
+                lines.append(line)
+            login_url = self.api.web_login_code(user_id, redirect_to='/chat').get('url')
+            buttons = []
+            if login_url:
+                buttons.append([{'text': '💬 Открыть чаты на сайте', 'url': login_url}])
             self.tg.send_message(
                 chat_id,
-                "Ваши диалоги:\n" + '\n'.join(lines) + "\n\nОткрыть чат — на сайте.",
-                reply_markup=self.tg.create_inline_keyboard([[{'text': 'Открыть чаты', 'url': f'{SITE_URL}/chat'}]])
+                "Ваши диалоги:\n" + '\n'.join(lines),
+                reply_markup=self.tg.create_inline_keyboard(buttons) if buttons else None,
+                parse_mode='HTML'
             )
         except SwingfoxAPIError as e:
             self.handle_api_error(chat_id, user_id, e)
@@ -194,34 +352,76 @@ class BotHandlers:
             if not clubs:
                 self.tg.send_message(chat_id, "Клубы не найдены.")
                 return
-            lines = [f"• {c.get('name', c.get('id'))}" for c in clubs[:10]]
+            lines = []
+            buttons = []
+            for c in clubs[:10]:
+                name = c.get('name', c.get('id'))
+                city = c.get('city') or ''
+                lines.append(f"• <b>{name}</b>{f' — {city}' if city else ''}")
+                tg_link = c.get('telegram_link')
+                if tg_link:
+                    buttons.append([{'text': f'📱 {name[:30]}', 'url': tg_link}])
+            buttons.append([{'text': 'Все клубы на сайте', 'url': f'{SITE_URL}/clubs'}])
             self.tg.send_message(
                 chat_id,
                 "Клубы:\n" + '\n'.join(lines),
-                reply_markup=self.tg.create_inline_keyboard([[{'text': 'Все клубы', 'url': f'{SITE_URL}/clubs'}]])
+                reply_markup=self.tg.create_inline_keyboard(buttons),
+                parse_mode='HTML'
             )
         except SwingfoxAPIError as e:
             self.handle_api_error(chat_id, user_id, e)
 
-    def show_ads(self, chat_id: int, user_id: int) -> None:
+    def show_ads(self, chat_id: int, user_id: int, page_index: int = 0, edit_message: Optional[dict] = None) -> None:
         try:
-            data = self.api.get_ads(user_id)
-            ads = data.get('ads', data) if isinstance(data, dict) else data
-            if not ads:
-                self.tg.send_message(chat_id, "Объявлений нет.")
-                return
-            lines = [f"• {a.get('title', a.get('id'))}" for a in ads[:10]]
-            self.tg.send_message(
-                chat_id,
-                "Объявления:\n" + '\n'.join(lines),
-                reply_markup=self.tg.create_inline_keyboard([[{'text': 'Витрина', 'url': f'{SITE_URL}/ads'}]])
+            ads_list, _ = session_store.get_ads_state(user_id)
+            if not ads_list or page_index == 0 and not edit_message:
+                data = self.api.get_ads(user_id)
+                ads_list = data.get('ads', data) if isinstance(data, dict) else data
+                if not ads_list:
+                    self.tg.send_message(chat_id, "Объявлений нет.")
+                    return
+                session_store.set_ads(user_id, ads_list)
+
+            if page_index < 0:
+                page_index = 0
+            if page_index >= len(ads_list):
+                page_index = len(ads_list) - 1
+            session_store.set_ads_index(user_id, page_index)
+
+            ad = ads_list[page_index]
+            title = ad.get('title', 'Без названия')
+            text = (
+                f"<b>{title}</b>\n"
+                f"{ad.get('type', '')} · {ad.get('city', '')}\n\n"
+                f"{(ad.get('description') or '')[:800]}"
             )
+            nav = []
+            if len(ads_list) > 1:
+                nav = [
+                    {'text': '◀️', 'callback_data': 'ads:prev'},
+                    {'text': f'{page_index + 1}/{len(ads_list)}', 'callback_data': 'ads:noop'},
+                    {'text': '▶️', 'callback_data': 'ads:next'},
+                ]
+            keyboard_rows = []
+            if nav:
+                keyboard_rows.append(nav)
+            keyboard_rows.append([{'text': 'Витрина на сайте', 'url': f'{SITE_URL}/ads'}])
+            keyboard = self.tg.create_inline_keyboard(keyboard_rows)
+
+            image = ad.get('image')
+            if edit_message:
+                self.tg.send_message(chat_id, text, reply_markup=keyboard, parse_mode='HTML')
+            elif image:
+                img_url = f"{UPLOADS_URL}/{str(image).lstrip('/')}"
+                self.tg.send_photo(chat_id, img_url, text, reply_markup=keyboard)
+            else:
+                self.tg.send_message(chat_id, text, reply_markup=keyboard, parse_mode='HTML')
         except SwingfoxAPIError as e:
             self.handle_api_error(chat_id, user_id, e)
 
-    def send_web_login(self, chat_id: int, user_id: int) -> None:
+    def send_web_login(self, chat_id: int, user_id: int, redirect_to: Optional[str] = None) -> None:
         try:
-            data = self.api.web_login_code(user_id)
+            data = self.api.web_login_code(user_id, redirect_to=redirect_to)
             url = data.get('url')
             if not url:
                 self.tg.send_message(chat_id, "Не удалось получить ссылку.")
@@ -247,18 +447,53 @@ class BotHandlers:
         try:
             if data.startswith('like:'):
                 login = data.split(':', 1)[1]
+                self._clear_swipe_keyboard(user_id)
                 result = self.api.like(user_id, login)
                 msg = '💕 Взаимная симпатия!' if result.get('match') else '❤️ Лайк отправлен'
                 self.tg.answer_callback_query(cb_id, msg)
                 self.show_next_profile(chat_id, user_id)
             elif data.startswith('dislike:'):
                 login = data.split(':', 1)[1]
+                self._clear_swipe_keyboard(user_id)
                 self.api.dislike(user_id, login)
                 self.tg.answer_callback_query(cb_id, 'Пропущено')
                 self.show_next_profile(chat_id, user_id)
-            elif data == 'swipe:next':
+            elif data == 'swipe:back':
                 self.tg.answer_callback_query(cb_id)
-                self.show_next_profile(chat_id, user_id)
+                self.show_next_profile(chat_id, user_id, direction='back')
+            elif data == 'profile:open':
+                self.tg.answer_callback_query(cb_id)
+                self.show_my_profile(chat_id, user_id)
+            elif data.startswith('profile:edit:'):
+                field = data.split(':', 2)[2]
+                if field == 'photo':
+                    session_store.set_state(user_id, 'profile_edit:photo')
+                    self.tg.answer_callback_query(cb_id)
+                    self.tg.send_message(chat_id, "Отправьте новое фото профиля.")
+                else:
+                    session_store.set_state(user_id, f'profile_edit:{field}')
+                    label = PROFILE_EDIT_FIELDS.get(field, field)
+                    self.tg.answer_callback_query(cb_id)
+                    self.tg.send_message(chat_id, f"Введите новое значение: <b>{label}</b>", parse_mode='HTML')
+            elif data == 'ads:prev':
+                ads_list, idx = session_store.get_ads_state(user_id)
+                self.tg.answer_callback_query(cb_id)
+                self.show_ads(chat_id, user_id, page_index=max(0, idx - 1), edit_message=callback_query.get('message'))
+            elif data == 'ads:next':
+                ads_list, idx = session_store.get_ads_state(user_id)
+                self.tg.answer_callback_query(cb_id)
+                next_idx = idx + 1 if idx + 1 < len(ads_list) else 0
+                self.show_ads(chat_id, user_id, page_index=next_idx, edit_message=callback_query.get('message'))
+            elif data == 'ads:noop':
+                self.tg.answer_callback_query(cb_id)
+            elif data.startswith('gi:accept:'):
+                invite_id = data.split(':', 2)[2]
+                self.api.accept_game_invite(user_id, invite_id)
+                self.tg.answer_callback_query(cb_id, 'Приглашение принято ✅')
+            elif data.startswith('gi:decline:'):
+                invite_id = data.split(':', 2)[2]
+                self.api.decline_game_invite(user_id, invite_id)
+                self.tg.answer_callback_query(cb_id, 'Приглашение отклонено')
             else:
                 self.tg.answer_callback_query(cb_id)
         except SwingfoxAPIError as e:
