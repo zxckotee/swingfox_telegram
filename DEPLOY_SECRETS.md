@@ -76,15 +76,15 @@ GitHub показывает workflow только если файл **есть �
 
 | `PRODUCTION` | Backend API | Сайт |
 |---|---|---|
-| `off` *(default)* | `https://127.0.0.1:3002/api` (staging) | `https://swingfox.ru/stagging` |
-| `on` | `https://127.0.0.1:3001/api` (prod) | `https://swingfox.ru` |
+| `on` *(default)* | `https://127.0.0.1:3001/api` (prod) | `https://swingfox.ru` |
+| `off` | `https://127.0.0.1:3002/api` (staging) | `https://swingfox.ru/stagging` |
 
 ```bash
-# staging (по умолчанию)
-PRODUCTION=off
-
-# production
+# production (по умолчанию)
 PRODUCTION=on
+
+# staging (ручной деплой через workflow_dispatch)
+PRODUCTION=off
 ```
 
 Явные `SWINGFOX_API_URL`, `SWINGFOX_UPLOADS_URL`, `PUBLIC_WEB_URL` переопределяют значения по умолчанию.

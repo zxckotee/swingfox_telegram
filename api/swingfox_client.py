@@ -12,6 +12,7 @@ import requests
 from urllib3.exceptions import InsecureRequestWarning
 
 from config.backend import get_backend_config
+from state.token_store import TokenStore
 
 
 class SwingfoxClient:
@@ -21,7 +22,8 @@ class SwingfoxClient:
         backend = get_backend_config()
         self.api_url = (api_url or backend['api_url']).rstrip('/')
         self.shared_secret = shared_secret or os.getenv('TELEGRAM_BOT_SHARED_SECRET', '')
-        self._tokens: Dict[int, str] = {}
+        self._token_store = TokenStore()
+        self.last_auth_error: Optional[str] = None
         self._verify_ssl = self._resolve_ssl_verify()
 
     def _resolve_ssl_verify(self) -> bool:
@@ -34,11 +36,30 @@ class SwingfoxClient:
         return True
 
     def set_token(self, telegram_id: int, token: str) -> None:
-        self._tokens[int(telegram_id)] = token
+        self._token_store.set(telegram_id, token)
+        self.last_auth_error = None
         login = self._login_from_jwt(token)
         if login:
             from state.session_store import session_store
             session_store.set_login(telegram_id, login)
+
+    def clear_token(self, telegram_id: int) -> None:
+        self._token_store.pop(telegram_id)
+
+    @staticmethod
+    def _jwt_expired(token: str, leeway_sec: int = 60) -> bool:
+        try:
+            parts = token.split('.')
+            if len(parts) < 2:
+                return True
+            pad = '=' * (-len(parts[1]) % 4)
+            payload = json.loads(base64.urlsafe_b64decode(parts[1] + pad))
+            exp = payload.get('exp')
+            if not exp:
+                return False
+            return time.time() >= float(exp) - leeway_sec
+        except Exception:
+            return True
 
     @staticmethod
     def _login_from_jwt(token: str) -> Optional[str]:
@@ -66,12 +87,15 @@ class SwingfoxClient:
         return None
 
     def get_token(self, telegram_id: int) -> Optional[str]:
-        return self._tokens.get(int(telegram_id))
+        return self._token_store.get(telegram_id)
 
     def ensure_authenticated(self, telegram_id: int) -> bool:
-        """Restore JWT from backend after bot restart (telegram_id stays in DB)."""
-        if self.get_token(telegram_id):
+        """Use persisted JWT or refresh from backend when missing/expired."""
+        token = self.get_token(telegram_id)
+        if token and not self._jwt_expired(token):
             return True
+        if token:
+            self.clear_token(telegram_id)
         return self.refresh_token(telegram_id)
 
     def _sign(self, telegram_id: int) -> Dict[str, Any]:
@@ -148,13 +172,28 @@ class SwingfoxClient:
         return data
 
     def refresh_token(self, telegram_id: int) -> bool:
+        self.last_auth_error = None
+        if not self.shared_secret:
+            self.last_auth_error = 'missing_shared_secret'
+            print(
+                f'WARNING: refresh_token failed for {telegram_id}: '
+                'TELEGRAM_BOT_SHARED_SECRET is not set'
+            )
+            return False
+
         body = self._sign(telegram_id)
         try:
             data = self._request('POST', '/telegram/token/refresh', None, json=body, auth=False)
             if data.get('token'):
                 self.set_token(telegram_id, data['token'])
                 return True
-        except SwingfoxAPIError:
+            self.last_auth_error = 'no_token_in_response'
+        except SwingfoxAPIError as exc:
+            self.last_auth_error = exc.error
+            print(
+                f'WARNING: refresh_token failed for {telegram_id}: '
+                f'{exc.error} ({exc.message})'
+            )
             return False
         return False
 

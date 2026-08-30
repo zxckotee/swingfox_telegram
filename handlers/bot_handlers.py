@@ -94,10 +94,24 @@ class BotHandlers:
     def _require_auth(self, chat_id: int, user_id: int) -> bool:
         if self.api.ensure_authenticated(user_id):
             return True
-        self.tg.send_message(
-            chat_id,
-            "Сначала привяжите аккаунт через ссылку из профиля на swingfox.ru"
-        )
+
+        reason = self.api.last_auth_error or 'not_linked'
+        if reason == 'not_linked':
+            self.tg.send_message(
+                chat_id,
+                "Сначала привяжите аккаунт через ссылку из профиля на swingfox.ru"
+            )
+        elif reason in ('invalid_signature', 'missing_shared_secret', 'backend_unreachable'):
+            self.tg.send_message(
+                chat_id,
+                "⚠️ Временная ошибка авторизации. Нажмите /start через минуту."
+            )
+        else:
+            self.tg.send_message(
+                chat_id,
+                "Сессия сброшена. Нажмите /start — если Telegram привязан в профиле, "
+                "вход восстановится автоматически."
+            )
         return False
 
     def _profile_search_ready(self, profile: dict) -> bool:
@@ -514,7 +528,7 @@ class BotHandlers:
                 reply_markup=self.tg.create_inline_keyboard([[{'text': 'Оформить VIP', 'url': f'{SITE_URL}/profile'}]])
             )
         elif error.error in ('invalid_token', 'token_expired', 'not_linked'):
-            self.api._tokens.pop(user_id, None)
+            self.api.clear_token(user_id)
             if self.api.ensure_authenticated(user_id):
                 return
             self.tg.send_message(

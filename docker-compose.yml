@@ -17,7 +17,10 @@ services:
       TELEGRAM_BOT_SHARED_SECRET: ${TELEGRAM_BOT_SHARED_SECRET}
       TELEGRAM_PROXY: ${TELEGRAM_PROXY:-}
       TELEGRAM_API_BASE_URL: ${TELEGRAM_API_BASE_URL:-https://api.telegram.org}
-      PRODUCTION: ${PRODUCTION:-off}
+      PRODUCTION: ${PRODUCTION:-on}
       SWINGFOX_API_URL: ${SWINGFOX_API_URL:-}
       SWINGFOX_UPLOADS_URL: ${SWINGFOX_UPLOADS_URL:-}
       PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-}
+      TOKEN_STORE_PATH: /data/tokens.json
+    volumes:
+      - ./data:/data

@@ -1,2 +1,4 @@
 config/__pycache__/
 __pycache__/
+data/tokens.json
+data/*.tmp
