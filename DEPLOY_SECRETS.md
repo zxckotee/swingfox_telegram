@@ -89,7 +89,7 @@ PRODUCTION=off
 
 Явные `SWINGFOX_API_URL`, `SWINGFOX_UPLOADS_URL`, `PUBLIC_WEB_URL` переопределяют значения по умолчанию.
 
-Сессии бота хранятся в SQLite (`./data/sessions.db` на сервере → `/app/data` в контейнере). После деплоя `redeploy.sh` выставляет права `10001:10001` на `./data`.
+Сессии бота хранятся в SQLite (docker named volume `bot_sessions` → `/app/data/sessions.db`). При проблемах с volume используется fallback `~/.local/share/swingfox/sessions.db` внутри контейнера.
 
 ---
 

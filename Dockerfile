@@ -19,10 +19,10 @@ COPY state ./state
 COPY telegram ./telegram
 COPY main.py .
 
-# Non-root user + writable session dir (host volume mounts over /app/data)
+# Non-root user + writable session dir (named volume mounts at /app/data)
 RUN useradd -m -u 10001 botuser \
-    && mkdir -p /app/data \
-    && chown -R botuser:botuser /app
+    && mkdir -p /app/data /home/botuser/.local/share/swingfox \
+    && chown -R botuser:botuser /app /home/botuser
 USER botuser
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \

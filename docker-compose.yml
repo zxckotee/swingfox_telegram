@@ -21,6 +21,8 @@ services:
       SWINGFOX_API_URL: ${SWINGFOX_API_URL:-}
       SWINGFOX_UPLOADS_URL: ${SWINGFOX_UPLOADS_URL:-}
       PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-}
-      SESSION_DB_PATH: /app/data/sessions.db
     volumes:
-      - ./data:/app/data
+      - bot_sessions:/app/data
+
+volumes:
+  bot_sessions:

@@ -5,7 +5,11 @@ import os
 import sqlite3
 import threading
 import time
-from typing import Optional
+from typing import List, Optional
+
+
+def _app_data_db_path() -> str:
+    return '/app/data/sessions.db'
 
 
 def _default_db_path() -> str:
@@ -14,59 +18,46 @@ def _default_db_path() -> str:
     )
 
 
-def _path_is_writable(path: str) -> bool:
+def _home_db_path() -> str:
+    return os.path.join(
+        os.path.expanduser('~'),
+        '.local',
+        'share',
+        'swingfox',
+        'sessions.db'
+    )
+
+
+def _candidate_paths(requested: Optional[str] = None) -> List[str]:
+    paths: List[str] = []
+    if requested:
+        paths.append(os.path.abspath(requested))
+
+    env_path = os.getenv('SESSION_DB_PATH') or os.getenv('TOKEN_STORE_PATH')
+    if env_path:
+        paths.append(os.path.abspath(env_path))
+
+    paths.extend([
+        _app_data_db_path(),
+        _default_db_path(),
+        _home_db_path(),
+    ])
+
+    unique: List[str] = []
+    seen = set()
+    for path in paths:
+        if path not in seen:
+            seen.add(path)
+            unique.append(path)
+    return unique
+
+
+def _path_is_usable(path: str) -> bool:
     directory = os.path.dirname(path) or '.'
     try:
         os.makedirs(directory, exist_ok=True)
-        probe = os.path.join(directory, '.write_probe')
-        with open(probe, 'w', encoding='utf-8') as handle:
-            handle.write('ok')
-        os.remove(probe)
-        return True
-    except OSError:
-        return False
-
-
-def _resolve_db_path(requested: Optional[str] = None) -> str:
-    candidates = []
-    if requested:
-        candidates.append(os.path.abspath(requested))
-    env_path = os.getenv('SESSION_DB_PATH') or os.getenv('TOKEN_STORE_PATH')
-    if env_path:
-        candidates.append(os.path.abspath(env_path))
-    candidates.append(_default_db_path())
-
-    seen = set()
-    for path in candidates:
-        if path in seen:
-            continue
-        seen.add(path)
-        if _path_is_writable(path):
-            return path
-
-    fallback = _default_db_path()
-    os.makedirs(os.path.dirname(fallback), exist_ok=True)
-    print(
-        f'WARNING: session DB path is not writable ({candidates[0] if candidates else fallback}); '
-        f'using fallback {fallback}'
-    )
-    return fallback
-
-
-class TokenStore:
-    def __init__(self, db_path: Optional[str] = None):
-        self._db_path = _resolve_db_path(db_path)
-        self._lock = threading.Lock()
-        self._init_db()
-        self._migrate_json_if_needed()
-
-    def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self._db_path, timeout=30)
-        conn.row_factory = sqlite3.Row
-        return conn
-
-    def _init_db(self) -> None:
-        with self._connect() as conn:
+        conn = sqlite3.connect(path, timeout=5)
+        try:
             conn.execute('PRAGMA journal_mode=WAL')
             conn.execute(
                 '''
@@ -79,8 +70,49 @@ class TokenStore:
                 '''
             )
             conn.commit()
+        finally:
+            conn.close()
+        return True
+    except (OSError, sqlite3.Error):
+        return False
+
+
+def _resolve_db_path(requested: Optional[str] = None) -> str:
+    candidates = _candidate_paths(requested)
+    for path in candidates:
+        if _path_is_usable(path):
+            return path
+
+    raise RuntimeError(
+        'No writable SQLite session path found. Tried: '
+        + ', '.join(candidates)
+    )
+
+
+class TokenStore:
+    def __init__(self, db_path: Optional[str] = None):
+        self._db_path = _resolve_db_path(db_path)
+        self._lock = threading.Lock()
+        print(f'Session DB: {self._db_path}')
+        self._migrate_json_if_needed()
+
+    @property
+    def db_path(self) -> str:
+        return self._db_path
+
+    def _connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self._db_path, timeout=30)
+        conn.row_factory = sqlite3.Row
+        return conn
 
     def _legacy_json_path(self) -> str:
+        for path in (
+            os.path.join(os.path.dirname(self._db_path), 'tokens.json'),
+            '/app/data/tokens.json',
+            '/data/tokens.json',
+        ):
+            if os.path.isfile(path):
+                return path
         return os.path.join(os.path.dirname(self._db_path), 'tokens.json')
 
     def _migrate_json_if_needed(self) -> None:
@@ -198,4 +230,22 @@ class TokenStore:
         return int(row['total']) if row else 0
 
 
-token_store = TokenStore()
+_store: Optional[TokenStore] = None
+_store_lock = threading.Lock()
+
+
+def get_token_store() -> TokenStore:
+    global _store
+    if _store is None:
+        with _store_lock:
+            if _store is None:
+                _store = TokenStore()
+    return _store
+
+
+class _TokenStoreProxy:
+    def __getattr__(self, name: str):
+        return getattr(get_token_store(), name)
+
+
+token_store = _TokenStoreProxy()
