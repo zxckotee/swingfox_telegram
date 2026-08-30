@@ -73,7 +73,11 @@ jobs:
             export TELEGRAM_BOT_SHARED_SECRET='${{ secrets.TELEGRAM_BOT_SHARED_SECRET }}'
             export TELEGRAM_PROXY='${{ secrets.TELEGRAM_PROXY }}'
             export TELEGRAM_API_BASE_URL='${{ secrets.TELEGRAM_API_BASE_URL }}'
-            export PRODUCTION='${{ github.event.inputs.production || 'off' }}'
+            if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+              export PRODUCTION='${{ github.event.inputs.production || 'off' }}'
+            else
+              export PRODUCTION='on'
+            fi
 
             bash scripts/write-env-from-ci.sh "$DEPLOY_PATH"
 
