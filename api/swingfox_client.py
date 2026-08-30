@@ -12,7 +12,7 @@ import requests
 from urllib3.exceptions import InsecureRequestWarning
 
 from config.backend import get_backend_config
-from state.token_store import TokenStore
+from state.token_store import token_store
 
 
 class SwingfoxClient:
@@ -22,7 +22,7 @@ class SwingfoxClient:
         backend = get_backend_config()
         self.api_url = (api_url or backend['api_url']).rstrip('/')
         self.shared_secret = shared_secret or os.getenv('TELEGRAM_BOT_SHARED_SECRET', '')
-        self._token_store = TokenStore()
+        self._token_store = token_store
         self.last_auth_error: Optional[str] = None
         self._verify_ssl = self._resolve_ssl_verify()
 
@@ -36,9 +36,9 @@ class SwingfoxClient:
         return True
 
     def set_token(self, telegram_id: int, token: str) -> None:
-        self._token_store.set(telegram_id, token)
-        self.last_auth_error = None
         login = self._login_from_jwt(token)
+        self._token_store.set(telegram_id, token, login=login)
+        self.last_auth_error = None
         if login:
             from state.session_store import session_store
             session_store.set_login(telegram_id, login)
@@ -78,10 +78,15 @@ class SwingfoxClient:
         login = session_store.get_login(telegram_id)
         if login:
             return login
+        login = self._token_store.get_login(telegram_id)
+        if login:
+            session_store.set_login(telegram_id, login)
+            return login
         token = self.get_token(telegram_id)
         if token:
             login = self._login_from_jwt(token)
             if login:
+                self._token_store.set_login(telegram_id, login)
                 session_store.set_login(telegram_id, login)
             return login
         return None

@@ -21,6 +21,6 @@ services:
       SWINGFOX_API_URL: ${SWINGFOX_API_URL:-}
       SWINGFOX_UPLOADS_URL: ${SWINGFOX_UPLOADS_URL:-}
       PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-}
-      TOKEN_STORE_PATH: /data/tokens.json
+      SESSION_DB_PATH: /data/sessions.db
     volumes:
       - ./data:/data

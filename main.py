@@ -58,7 +58,8 @@ def run_polling() -> None:
     print('SwingFox Telegram bot started (polling)...')
     print(f'Backend: {env_label} → {backend["api_url"]}')
     if api._token_store.count():
-        print(f'Restored {api._token_store.count()} persisted session(s)')
+        print(f'Restored {api._token_store.count()} persisted session(s) from SQLite')
+    print(f'Session DB: {api._token_store._db_path}')
     if not os.getenv('TELEGRAM_BOT_SHARED_SECRET'):
         print('WARNING: TELEGRAM_BOT_SHARED_SECRET is not set — session refresh will fail')
 
