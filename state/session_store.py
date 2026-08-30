@@ -29,9 +29,18 @@ class SessionStore:
 
     def set_login(self, telegram_id: int, login: str) -> None:
         self.get(telegram_id)['login'] = login
+        from state.token_store import token_store
+        token_store.set_login(telegram_id, login)
 
     def get_login(self, telegram_id: int) -> Optional[str]:
-        return self.get(telegram_id).get('login')
+        login = self.get(telegram_id).get('login')
+        if login:
+            return login
+        from state.token_store import token_store
+        login = token_store.get_login(telegram_id)
+        if login:
+            self.get(telegram_id)['login'] = login
+        return login
 
     def set_last_swipe_message(self, telegram_id: int, chat_id: int, message_id: int) -> None:
         self.get(telegram_id)['last_swipe'] = {'chat_id': chat_id, 'message_id': message_id}

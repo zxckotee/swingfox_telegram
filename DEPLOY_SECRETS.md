@@ -89,6 +89,8 @@ PRODUCTION=off
 
 Явные `SWINGFOX_API_URL`, `SWINGFOX_UPLOADS_URL`, `PUBLIC_WEB_URL` переопределяют значения по умолчанию.
 
+Сессии бота хранятся в SQLite (`./data/sessions.db` на сервере, volume в docker-compose) и переживают перезапуск контейнера.
+
 ---
 
 ## Сеть

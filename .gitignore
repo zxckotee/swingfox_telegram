@@ -1,4 +1,6 @@
 config/__pycache__/
 __pycache__/
+data/sessions.db
+data/sessions.db-*
 data/tokens.json
 data/*.tmp

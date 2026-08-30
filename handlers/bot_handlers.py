@@ -167,6 +167,13 @@ class BotHandlers:
             self._welcome_back(chat_id)
             return
 
+        if self.api.refresh_token(user_id):
+            self._welcome_back(
+                chat_id,
+                "✅ Сессия восстановлена из базы. Выберите действие в меню."
+            )
+            return
+
         self._prompt_link(chat_id)
 
     def handle_text(self, chat_id: int, user_id: int, text: str) -> None:
