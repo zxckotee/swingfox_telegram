@@ -23,6 +23,11 @@ done < <(docker ps -a --format '{{.Names}}' 2>/dev/null | grep -E 'swingfox_tele
 
 set -e
 
+DATA_DIR="$ROOT_DIR/data"
+mkdir -p "$DATA_DIR"
+# Container runs as uid 10001 (botuser); host volume must be writable.
+chown 10001:10001 "$DATA_DIR" 2>/dev/null || chmod 777 "$DATA_DIR"
+
 echo ">>> Start telegram bot"
 if [ "$BUILD" = "build" ]; then
   docker-compose up -d --build --force-recreate --no-deps telegram-bot

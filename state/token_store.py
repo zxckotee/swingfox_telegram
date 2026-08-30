@@ -8,15 +8,55 @@ import time
 from typing import Optional
 
 
+def _default_db_path() -> str:
+    return os.path.abspath(
+        os.path.join(os.path.dirname(__file__), '..', 'data', 'sessions.db')
+    )
+
+
+def _path_is_writable(path: str) -> bool:
+    directory = os.path.dirname(path) or '.'
+    try:
+        os.makedirs(directory, exist_ok=True)
+        probe = os.path.join(directory, '.write_probe')
+        with open(probe, 'w', encoding='utf-8') as handle:
+            handle.write('ok')
+        os.remove(probe)
+        return True
+    except OSError:
+        return False
+
+
+def _resolve_db_path(requested: Optional[str] = None) -> str:
+    candidates = []
+    if requested:
+        candidates.append(os.path.abspath(requested))
+    env_path = os.getenv('SESSION_DB_PATH') or os.getenv('TOKEN_STORE_PATH')
+    if env_path:
+        candidates.append(os.path.abspath(env_path))
+    candidates.append(_default_db_path())
+
+    seen = set()
+    for path in candidates:
+        if path in seen:
+            continue
+        seen.add(path)
+        if _path_is_writable(path):
+            return path
+
+    fallback = _default_db_path()
+    os.makedirs(os.path.dirname(fallback), exist_ok=True)
+    print(
+        f'WARNING: session DB path is not writable ({candidates[0] if candidates else fallback}); '
+        f'using fallback {fallback}'
+    )
+    return fallback
+
+
 class TokenStore:
     def __init__(self, db_path: Optional[str] = None):
-        default_path = os.path.join(
-            os.path.dirname(__file__), '..', 'data', 'sessions.db'
-        )
-        env_path = os.getenv('SESSION_DB_PATH') or os.getenv('TOKEN_STORE_PATH')
-        self._db_path = os.path.abspath(db_path or env_path or default_path)
+        self._db_path = _resolve_db_path(db_path)
         self._lock = threading.Lock()
-        os.makedirs(os.path.dirname(self._db_path), exist_ok=True)
         self._init_db()
         self._migrate_json_if_needed()
 
