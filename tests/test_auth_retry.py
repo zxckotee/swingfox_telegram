@@ -1,7 +1,14 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
-from api.swingfox_client import SwingfoxAPIError, SwingfoxClient
+from api.swingfox_client import (
+    AUTH_BACKEND_OUTDATED,
+    AUTH_CONFIG,
+    AUTH_NOT_LINKED,
+    SwingfoxAPIError,
+    SwingfoxClient,
+    classify_auth_failure,
+)
 
 
 class AuthRetryTest(unittest.TestCase):
@@ -54,6 +61,12 @@ class AuthRetryTest(unittest.TestCase):
         payload = req_mock.call_args.kwargs['json']
         self.assertEqual(payload['search_status'], 'Мужчина&&Женщина')
         self.assertEqual(payload['city'], 'Москва')
+
+
+    def test_classify_auth_failure(self):
+        self.assertEqual(classify_auth_failure('not_linked'), AUTH_NOT_LINKED)
+        self.assertEqual(classify_auth_failure('invalid_signature'), AUTH_CONFIG)
+        self.assertEqual(classify_auth_failure('API endpoint не найден'), AUTH_BACKEND_OUTDATED)
 
 
 if __name__ == '__main__':

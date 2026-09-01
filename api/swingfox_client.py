@@ -17,6 +17,24 @@ from state.token_store import token_store
 AUTH_RETRY_ERRORS = frozenset({'invalid_token', 'token_expired'})
 T = TypeVar('T')
 
+AUTH_NOT_LINKED = 'not_linked'
+AUTH_CONFIG = 'config'
+AUTH_BACKEND_DOWN = 'backend_down'
+AUTH_BACKEND_OUTDATED = 'backend_outdated'
+AUTH_UNKNOWN = 'unknown'
+
+
+def classify_auth_failure(error: Optional[str]) -> str:
+    if not error or error == 'not_linked':
+        return AUTH_NOT_LINKED
+    if error in ('invalid_signature', 'missing_shared_secret'):
+        return AUTH_CONFIG
+    if error == 'backend_unreachable':
+        return AUTH_BACKEND_DOWN
+    if error == 'API endpoint не найден' or 'endpoint' in error.lower():
+        return AUTH_BACKEND_OUTDATED
+    return AUTH_UNKNOWN
+
 
 class SwingfoxClient:
     """HTTP-клиент SwingFox API. Без auth/password — только пользовательский JWT."""

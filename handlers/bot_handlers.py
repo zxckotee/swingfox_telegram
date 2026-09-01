@@ -1,7 +1,16 @@
 import os
 from typing import List, Optional
 
-from api.swingfox_client import SwingfoxAPIError, SwingfoxClient
+from api.swingfox_client import (
+    AUTH_BACKEND_DOWN,
+    AUTH_BACKEND_OUTDATED,
+    AUTH_CONFIG,
+    AUTH_NOT_LINKED,
+    AUTH_UNKNOWN,
+    SwingfoxAPIError,
+    SwingfoxClient,
+    classify_auth_failure,
+)
 from config.backend import get_backend_config
 from config.profile_options import FIELD_LABELS
 from handlers.profile_pickers import field_uses_picker, format_multi_display, handle_picker_callback, start_picker
@@ -99,23 +108,44 @@ class BotHandlers:
         self._send_auth_failure(chat_id, user_id)
         return False
 
-    def _send_auth_failure(self, chat_id: int, user_id: int) -> None:
-        reason = self.api.last_auth_error or 'not_linked'
-        if reason == 'not_linked':
+    def _send_auth_failure(self, chat_id: int, user_id: int, *, on_start: bool = False) -> None:
+        category = classify_auth_failure(self.api.last_auth_error)
+        if category == AUTH_NOT_LINKED:
+            if on_start:
+                self._prompt_link(chat_id)
+            else:
+                self.tg.send_message(
+                    chat_id,
+                    "Сначала привяжите аккаунт через ссылку из профиля на swingfox.ru"
+                )
+        elif category == AUTH_CONFIG:
             self.tg.send_message(
                 chat_id,
-                "Сначала привяжите аккаунт через ссылку из профиля на swingfox.ru"
+                "⚠️ Ошибка конфигурации бота (shared secret). Обратитесь к администратору."
             )
-        elif reason in ('invalid_signature', 'missing_shared_secret', 'backend_unreachable'):
+        elif category == AUTH_BACKEND_DOWN:
             self.tg.send_message(
                 chat_id,
-                "⚠️ Временная ошибка авторизации. Нажмите /start через минуту."
+                "⚠️ Backend недоступен. Нажмите /start через минуту."
+            )
+        elif category == AUTH_BACKEND_OUTDATED:
+            self.tg.send_message(
+                chat_id,
+                "⚠️ Привязка на сайте есть, но сервер ещё не умеет восстанавливать "
+                "Telegram-сессию (/api/telegram/token/refresh). Нужно обновить backend "
+                "(ветка prod3, PR #70). Пока получите новую ссылку в профиле → Telegram-бот."
+            )
+        elif on_start:
+            self.tg.send_message(
+                chat_id,
+                "Не удалось восстановить сессию. Откройте профиль на сайте → "
+                "«Telegram-бот» → получите свежую ссылку и нажмите её."
             )
         else:
             self.tg.send_message(
                 chat_id,
-                "Сессия сброшена. Нажмите /start — если Telegram привязан в профиле, "
-                "вход восстановится автоматически."
+                "Не удалось восстановить сессию. Нажмите /start или получите новую "
+                "ссылку привязки в профиле на сайте."
             )
 
     def _profile_search_ready(self, profile: dict) -> bool:
@@ -178,7 +208,7 @@ class BotHandlers:
             )
             return
 
-        self._prompt_link(chat_id)
+        self._send_auth_failure(chat_id, user_id, on_start=True)
 
     def handle_text(self, chat_id: int, user_id: int, text: str) -> None:
         if not self._require_auth(chat_id, user_id):
