@@ -72,7 +72,7 @@ def start_picker(handlers: 'BotHandlers', chat_id: int, user_id: int, field: str
 
     if field in MULTI_PICKER_FIELDS:
         selected = set(split_multi_field(profile.get(field) or ''))
-        session_store.set_pick_draft(user_id, {'selected': list(selected)})
+        session_store.set_pick_draft(user_id, {'selected': list(selected), 'profile': profile})
         session_store.set_state(user_id, f'profile_pick:{field}')
         handlers.tg.send_message(
             chat_id,
@@ -83,7 +83,7 @@ def start_picker(handlers: 'BotHandlers', chat_id: int, user_id: int, field: str
         return
 
     if field in LIFESTYLE_FIELDS and is_couple_status(profile.get('status') or ''):
-        session_store.set_pick_draft(user_id, {'partner': 'man'})
+        session_store.set_pick_draft(user_id, {'partner': 'man', 'profile': profile})
         session_store.set_state(user_id, f'profile_pick:{field}')
         handlers.tg.send_message(
             chat_id,
@@ -93,6 +93,7 @@ def start_picker(handlers: 'BotHandlers', chat_id: int, user_id: int, field: str
         )
         return
 
+    session_store.set_pick_draft(user_id, {'profile': profile})
     session_store.set_state(user_id, f'profile_pick:{field}')
     handlers.tg.send_message(
         chat_id,
@@ -103,8 +104,18 @@ def start_picker(handlers: 'BotHandlers', chat_id: int, user_id: int, field: str
 
 
 def _save_field(handlers: 'BotHandlers', chat_id: int, user_id: int, field: str, value: str) -> None:
+    if not handlers.api.ensure_authenticated(user_id):
+        handlers._send_auth_failure(chat_id, user_id)
+        return
+
+    draft = session_store.get_pick_draft(user_id)
+    current = draft.get('profile')
+
     try:
-        handlers.api.update_profile(user_id, {field: value})
+        handlers.api.call_with_auth_retry(
+            user_id,
+            lambda: handlers.api.update_profile(user_id, {field: value}, current=current),
+        )
         session_store.set_state(user_id, None)
         session_store.clear_pick_draft(user_id)
         label = FIELD_LABELS.get(field, field)
@@ -166,7 +177,7 @@ def handle_picker_callback(
             selected.discard(value)
         else:
             selected.add(value)
-        session_store.set_pick_draft(user_id, {'selected': list(selected)})
+        session_store.set_pick_draft(user_id, {'selected': list(selected), 'profile': draft.get('profile')})
         handlers.tg.answer_callback_query(cb_id)
         handlers.tg.send_message(
             chat_id,
@@ -194,7 +205,7 @@ def handle_picker_callback(
         if value is None:
             handlers.tg.answer_callback_query(cb_id, 'Неверный вариант', show_alert=True)
             return True
-        session_store.set_pick_draft(user_id, {'partner': 'woman', 'man': value})
+        session_store.set_pick_draft(user_id, {'partner': 'woman', 'man': value, 'profile': draft.get('profile')})
         handlers.tg.answer_callback_query(cb_id)
         handlers.tg.send_message(
             chat_id,

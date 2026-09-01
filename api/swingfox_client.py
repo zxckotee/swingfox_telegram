@@ -5,7 +5,7 @@ import json
 import os
 import time
 import warnings
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional, TypeVar
 from urllib.parse import urlparse
 
 import requests
@@ -13,6 +13,9 @@ from urllib3.exceptions import InsecureRequestWarning
 
 from config.backend import get_backend_config
 from state.token_store import token_store
+
+AUTH_RETRY_ERRORS = frozenset({'invalid_token', 'token_expired'})
+T = TypeVar('T')
 
 
 class SwingfoxClient:
@@ -99,9 +102,16 @@ class SwingfoxClient:
         token = self.get_token(telegram_id)
         if token and not self._jwt_expired(token):
             return True
-        if token:
-            self.clear_token(telegram_id)
         return self.refresh_token(telegram_id)
+
+    def call_with_auth_retry(self, telegram_id: int, fn: Callable[[], T]) -> T:
+        """Run API call; on auth error refresh JWT once and retry."""
+        try:
+            return fn()
+        except SwingfoxAPIError as exc:
+            if exc.error not in AUTH_RETRY_ERRORS or not self.refresh_token(telegram_id):
+                raise
+            return fn()
 
     def _sign(self, telegram_id: int) -> Dict[str, Any]:
         ts = int(time.time())
@@ -247,8 +257,15 @@ class SwingfoxClient:
             })
         return self.get_profile(telegram_id, login)
 
-    def update_profile(self, telegram_id: int, fields: Dict[str, Any]) -> dict:
-        current = self.get_my_profile(telegram_id)
+    def update_profile(
+        self,
+        telegram_id: int,
+        fields: Dict[str, Any],
+        *,
+        current: Optional[dict] = None,
+    ) -> dict:
+        if current is None:
+            current = self.get_my_profile(telegram_id)
         payload = {
             'country': fields.get('country', current.get('country')),
             'city': fields.get('city', current.get('city')),
