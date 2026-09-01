@@ -3,6 +3,8 @@ from typing import List, Optional
 
 from api.swingfox_client import SwingfoxAPIError, SwingfoxClient
 from config.backend import get_backend_config
+from config.profile_options import FIELD_LABELS
+from handlers.profile_pickers import field_uses_picker, format_multi_display, handle_picker_callback, start_picker
 from state.session_store import session_store
 from telegram.client import TelegramClient
 
@@ -14,7 +16,7 @@ PROFILE_EDIT_FIELDS = {
     'city': 'город',
     'status': 'статус',
     'info': 'о себе',
-    'search_status': 'кого ищу (через запятую)',
+    'search_status': 'кого ищу',
     'search_age': 'возраст для поиска',
     'mobile': 'контакт',
     'height': 'рост',
@@ -50,7 +52,7 @@ def format_my_profile_caption(profile: dict) -> str:
         f"<b>Мой профиль — {profile.get('login', '—')}</b>",
         f"Статус: {profile.get('status') or '—'}",
         f"Город: {profile.get('city') or '—'}",
-        f"Кого ищу: {profile.get('search_status') or '—'}",
+        f"Кого ищу: {format_multi_display(profile.get('search_status') or '')}",
         f"Возраст: {profile.get('search_age') or '—'}",
         f"О себе: {(profile.get('info') or '—')[:200]}",
     ]
@@ -183,6 +185,9 @@ class BotHandlers:
         state = session_store.get_state(user_id)
         if state and state.startswith('profile_edit:'):
             field = state.split(':', 1)[1]
+            if field_uses_picker(field):
+                self.tg.send_message(chat_id, "Используйте кнопки под сообщением для выбора значения.")
+                return
             self._apply_profile_field(chat_id, user_id, field, text)
             return
 
@@ -226,13 +231,12 @@ class BotHandlers:
     def _apply_profile_field(self, chat_id: int, user_id: int, field: str, value: str) -> None:
         try:
             payload = {field: value.strip()}
-            if field == 'search_status':
-                payload['search_status'] = '&&'.join(
-                    part.strip() for part in value.split(',') if part.strip()
-                )
             self.api.update_profile(user_id, payload)
             session_store.set_state(user_id, None)
-            self.tg.send_message(chat_id, f"✅ Поле «{PROFILE_EDIT_FIELDS.get(field, field)}» обновлено.")
+            self.tg.send_message(
+                chat_id,
+                f"✅ Поле «{PROFILE_EDIT_FIELDS.get(field, FIELD_LABELS.get(field, field))}» обновлено."
+            )
             self.show_my_profile(chat_id, user_id)
         except SwingfoxAPIError as e:
             self.handle_api_error(chat_id, user_id, e)
@@ -491,11 +495,20 @@ class BotHandlers:
                     session_store.set_state(user_id, 'profile_edit:photo')
                     self.tg.answer_callback_query(cb_id)
                     self.tg.send_message(chat_id, "Отправьте новое фото профиля.")
+                elif field_uses_picker(field):
+                    self.tg.answer_callback_query(cb_id)
+                    try:
+                        start_picker(self, chat_id, user_id, field)
+                    except SwingfoxAPIError as e:
+                        self.handle_api_error(chat_id, user_id, e)
                 else:
                     session_store.set_state(user_id, f'profile_edit:{field}')
                     label = PROFILE_EDIT_FIELDS.get(field, field)
                     self.tg.answer_callback_query(cb_id)
                     self.tg.send_message(chat_id, f"Введите новое значение: <b>{label}</b>", parse_mode='HTML')
+            elif data.startswith('prof:'):
+                if not handle_picker_callback(self, chat_id, user_id, data, cb_id):
+                    self.tg.answer_callback_query(cb_id)
             elif data == 'ads:prev':
                 ads_list, idx = session_store.get_ads_state(user_id)
                 self.tg.answer_callback_query(cb_id)
