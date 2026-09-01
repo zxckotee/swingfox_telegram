@@ -96,7 +96,10 @@ class BotHandlers:
     def _require_auth(self, chat_id: int, user_id: int) -> bool:
         if self.api.ensure_authenticated(user_id):
             return True
+        self._send_auth_failure(chat_id, user_id)
+        return False
 
+    def _send_auth_failure(self, chat_id: int, user_id: int) -> None:
         reason = self.api.last_auth_error or 'not_linked'
         if reason == 'not_linked':
             self.tg.send_message(
@@ -114,7 +117,6 @@ class BotHandlers:
                 "Сессия сброшена. Нажмите /start — если Telegram привязан в профиле, "
                 "вход восстановится автоматически."
             )
-        return False
 
     def _profile_search_ready(self, profile: dict) -> bool:
         return bool((profile.get('search_status') or '').strip() and (profile.get('search_age') or '').strip())
@@ -229,9 +231,15 @@ class BotHandlers:
             self.tg.send_message(chat_id, "❌ Не удалось загрузить фото.")
 
     def _apply_profile_field(self, chat_id: int, user_id: int, field: str, value: str) -> None:
+        if not self.api.ensure_authenticated(user_id):
+            self._send_auth_failure(chat_id, user_id)
+            return
         try:
             payload = {field: value.strip()}
-            self.api.update_profile(user_id, payload)
+            self.api.call_with_auth_retry(
+                user_id,
+                lambda: self.api.update_profile(user_id, payload),
+            )
             session_store.set_state(user_id, None)
             self.tg.send_message(
                 chat_id,
@@ -547,10 +555,21 @@ class BotHandlers:
                 f"⚠️ {error.message}",
                 reply_markup=self.tg.create_inline_keyboard([[{'text': 'Оформить VIP', 'url': f'{SITE_URL}/profile'}]])
             )
-        elif error.error in ('invalid_token', 'token_expired', 'not_linked'):
-            self.api.clear_token(user_id)
-            if self.api.ensure_authenticated(user_id):
+        elif error.error in ('invalid_token', 'token_expired'):
+            if self.api.refresh_token(user_id):
+                self.tg.send_message(
+                    chat_id,
+                    "Сессия обновлена. Повторите последнее действие."
+                )
                 return
+            self.api.clear_token(user_id)
+            self.tg.send_message(
+                chat_id,
+                "Сессия устарела. Нажмите /start — если Telegram привязан в профиле, "
+                "вход восстановится автоматически."
+            )
+        elif error.error == 'not_linked':
+            self.api.clear_token(user_id)
             self.tg.send_message(
                 chat_id,
                 "Сессия устарела. Перепривяжите Telegram через ссылку в профиле на сайте."
