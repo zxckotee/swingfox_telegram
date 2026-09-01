@@ -60,5 +60,14 @@ class SessionStore:
     def set_ads_index(self, telegram_id: int, index: int) -> None:
         self.get(telegram_id)['ads_index'] = index
 
+    def set_pick_draft(self, telegram_id: int, draft: dict) -> None:
+        self.get(telegram_id)['pick_draft'] = draft
+
+    def get_pick_draft(self, telegram_id: int) -> dict:
+        return self.get(telegram_id).get('pick_draft') or {}
+
+    def clear_pick_draft(self, telegram_id: int) -> None:
+        self.get(telegram_id).pop('pick_draft', None)
+
 
 session_store = SessionStore()
