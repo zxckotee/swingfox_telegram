@@ -4,8 +4,10 @@ from typing import List, Optional
 from api.swingfox_client import SwingfoxAPIError, SwingfoxClient
 from config.backend import get_backend_config
 from config.profile_options import FIELD_LABELS
+from handlers.profile_format import format_my_profile_caption
 from handlers.profile_pickers import field_uses_picker, format_multi_display, handle_picker_callback, start_picker
 from state.session_store import session_store
+from utils.telegram_register_link import build_register_url
 from telegram.client import TelegramClient
 
 _backend = get_backend_config()
@@ -47,20 +49,6 @@ def format_profile_caption(profile: dict) -> str:
     return '\n'.join(x for x in parts if x)[:1024]
 
 
-def format_my_profile_caption(profile: dict) -> str:
-    lines = [
-        f"<b>Мой профиль — {profile.get('login', '—')}</b>",
-        f"Статус: {profile.get('status') or '—'}",
-        f"Город: {profile.get('city') or '—'}",
-        f"Кого ищу: {format_multi_display(profile.get('search_status') or '')}",
-        f"Возраст: {profile.get('search_age') or '—'}",
-        f"О себе: {(profile.get('info') or '—')[:200]}",
-    ]
-    if profile.get('mobile'):
-        lines.append(f"Контакт: {profile.get('mobile')}")
-    return '\n'.join(lines)[:1024]
-
-
 class BotHandlers:
     def __init__(self, api: SwingfoxClient):
         self.api = api
@@ -85,7 +73,32 @@ class BotHandlers:
             reply_markup=self.tg.main_menu_keyboard()
         )
 
-    def _prompt_link(self, chat_id: int) -> None:
+    def _prompt_unlinked(self, chat_id: int, user_id: int) -> None:
+        reg_url = build_register_url(user_id, SITE_URL)
+        lines = [
+            "👋 Привет! У вас ещё нет привязки к SwingFox.",
+            "",
+            "🆕 <b>Новый пользователь?</b> Зарегистрируйтесь на сайте — Telegram привяжется автоматически.",
+            "",
+            "🔗 <b>Уже есть аккаунт?</b> Войдите на сайте → профиль → «Telegram-бот» → получите ссылку и нажмите её.",
+        ]
+        keyboard_rows = []
+        if reg_url:
+            lines.insert(3, reg_url)
+            keyboard_rows.append([{'text': '📝 Зарегистрироваться', 'url': reg_url}])
+        else:
+            lines.insert(3, "⚠️ Ссылка на регистрацию временно недоступна (не настроен TELEGRAM_BOT_SHARED_SECRET).")
+        self.tg.send_message(
+            chat_id,
+            '\n'.join(lines),
+            reply_markup={'inline_keyboard': keyboard_rows} if keyboard_rows else {'remove_keyboard': True},
+            parse_mode='HTML',
+        )
+
+    def _prompt_link(self, chat_id: int, user_id: Optional[int] = None) -> None:
+        if user_id is not None:
+            self._prompt_unlinked(chat_id, user_id)
+            return
         self.tg.send_message(
             chat_id,
             "👋 Привет! Чтобы пользоваться ботом, привяжите аккаунт SwingFox.\n\n"
@@ -178,7 +191,7 @@ class BotHandlers:
             )
             return
 
-        self._prompt_link(chat_id)
+        self._prompt_link(chat_id, user_id)
 
     def handle_text(self, chat_id: int, user_id: int, text: str) -> None:
         if not self._require_auth(chat_id, user_id):
@@ -442,10 +455,30 @@ class BotHandlers:
             keyboard = self.tg.create_inline_keyboard(keyboard_rows)
 
             image = ad.get('image')
+            img_url = f"{UPLOADS_URL}/{str(image).lstrip('/')}" if image else None
+
             if edit_message:
-                self.tg.send_message(chat_id, text, reply_markup=keyboard, parse_mode='HTML')
-            elif image:
-                img_url = f"{UPLOADS_URL}/{str(image).lstrip('/')}"
+                msg_id = edit_message['message_id']
+                has_photo = bool(edit_message.get('photo'))
+                try:
+                    if img_url:
+                        if has_photo:
+                            self.tg.edit_message_media(chat_id, msg_id, img_url, text, keyboard)
+                        else:
+                            self.tg.delete_message(chat_id, msg_id)
+                            self.tg.send_photo(chat_id, img_url, text, reply_markup=keyboard)
+                    elif has_photo:
+                        self.tg.delete_message(chat_id, msg_id)
+                        self.tg.send_message(chat_id, text, reply_markup=keyboard, parse_mode='HTML')
+                    else:
+                        self.tg.edit_message_text(chat_id, msg_id, text, reply_markup=keyboard)
+                except Exception as exc:
+                    print(f'Ads pagination edit failed: {exc}')
+                    if img_url:
+                        self.tg.send_photo(chat_id, img_url, text, reply_markup=keyboard)
+                    else:
+                        self.tg.send_message(chat_id, text, reply_markup=keyboard, parse_mode='HTML')
+            elif img_url:
                 self.tg.send_photo(chat_id, img_url, text, reply_markup=keyboard)
             else:
                 self.tg.send_message(chat_id, text, reply_markup=keyboard, parse_mode='HTML')
