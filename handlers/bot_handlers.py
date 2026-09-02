@@ -73,6 +73,22 @@ class BotHandlers:
             reply_markup=self.tg.main_menu_keyboard()
         )
 
+    def _prompt_session_lost(self, chat_id: int, reason: str) -> None:
+        lines = [
+            "👋 Сессия в боте была сброшена (перезапуск или очистка Docker).",
+            "",
+            "Привязка на сайте, скорее всего, <b>сохранилась</b> — пропал только локальный вход в бота.",
+            "",
+            "🔗 Войдите на сайте → профиль → «Telegram-бот» → получите ссылку и нажмите её.",
+        ]
+        if reason in ('invalid_signature', 'missing_shared_secret'):
+            lines.append("\n⚠️ Ошибка конфигурации (TELEGRAM_BOT_SHARED_SECRET).")
+        elif reason == 'backend_unreachable':
+            lines.append("\n⚠️ Backend недоступен — попробуйте /start позже.")
+        elif reason == 'API endpoint не найден' or 'endpoint' in reason.lower():
+            lines.append("\n⚠️ На backend нет /api/telegram/token/refresh — нужен деплой API.")
+        self.tg.send_message(chat_id, '\n'.join(lines), parse_mode='HTML')
+
     def _prompt_unlinked(self, chat_id: int, user_id: int) -> None:
         reg_url = build_register_url(user_id, SITE_URL)
         lines = [
@@ -191,7 +207,11 @@ class BotHandlers:
             )
             return
 
-        self._prompt_link(chat_id, user_id)
+        reason = self.api.last_auth_error or 'not_linked'
+        if reason == 'not_linked':
+            self._prompt_unlinked(chat_id, user_id)
+        else:
+            self._prompt_session_lost(chat_id, reason)
 
     def handle_text(self, chat_id: int, user_id: int, text: str) -> None:
         if not self._require_auth(chat_id, user_id):
