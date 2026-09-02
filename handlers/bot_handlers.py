@@ -84,7 +84,10 @@ class BotHandlers:
         if reason in ('invalid_signature', 'missing_shared_secret'):
             lines.append("\n⚠️ Ошибка конфигурации (TELEGRAM_BOT_SHARED_SECRET).")
         elif reason == 'backend_unreachable':
-            lines.append("\n⚠️ Backend недоступен — попробуйте /start позже.")
+            lines.append(
+                "\n⚠️ Backend недоступен (staging не запущен?) — попробуйте /start позже "
+                "или ссылку из профиля на сайте."
+            )
         elif reason == 'API endpoint не найден' or 'endpoint' in reason.lower():
             lines.append("\n⚠️ На backend нет /api/telegram/token/refresh — нужен деплой API.")
         self.tg.send_message(chat_id, '\n'.join(lines), parse_mode='HTML')
@@ -135,10 +138,17 @@ class BotHandlers:
                 chat_id,
                 "Сначала привяжите аккаунт через ссылку из профиля на swingfox.ru"
             )
-        elif reason in ('invalid_signature', 'missing_shared_secret', 'backend_unreachable'):
+        elif reason == 'backend_unreachable':
             self.tg.send_message(
                 chat_id,
-                "⚠️ Временная ошибка авторизации. Нажмите /start через минуту."
+                "⚠️ Backend недоступен (staging мог не подняться после деплоя). "
+                "Попробуйте /start через несколько минут.\n\n"
+                "Если Telegram привязан на сайте — ссылка в профиле → «Telegram-бот»."
+            )
+        elif reason in ('invalid_signature', 'missing_shared_secret'):
+            self.tg.send_message(
+                chat_id,
+                "⚠️ Ошибка конфигурации бота (shared secret). Обратитесь к администратору."
             )
         else:
             self.tg.send_message(
