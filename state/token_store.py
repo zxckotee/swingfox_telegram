@@ -28,6 +28,10 @@ def _home_db_path() -> str:
     )
 
 
+def _shm_db_path() -> str:
+    return '/dev/shm/swingfox/sessions.db'
+
+
 def _candidate_paths(requested: Optional[str] = None) -> List[str]:
     paths: List[str] = []
     if requested:
@@ -39,6 +43,7 @@ def _candidate_paths(requested: Optional[str] = None) -> List[str]:
 
     paths.extend([
         _app_data_db_path(),
+        _shm_db_path(),
         _default_db_path(),
         _home_db_path(),
     ])
@@ -97,42 +102,68 @@ def _path_is_usable(path: str) -> bool:
         return False
 
 
+_MEMORY_DB_URI = 'file:swingfox_sessions?mode=memory&cache=shared'
+
+
 def _resolve_db_path(requested: Optional[str] = None) -> str:
     candidates = _candidate_paths(requested)
     for path in candidates:
         if _path_is_usable(path):
             return path
 
-    raise RuntimeError(
-        'No writable SQLite session path found. Tried: ' + ', '.join(candidates)
+    print(
+        'WARNING: no writable session directory (disk full?). '
+        'Using in-memory SQLite — sessions will be lost on restart. '
+        'Free disk space: docker system prune -af && df -h'
     )
+    return _MEMORY_DB_URI
 
 
 class TokenStore:
     def __init__(self, db_path: Optional[str] = None):
-        self._db_path = _resolve_db_path(db_path)
+        if db_path in (':memory:', _MEMORY_DB_URI):
+            self._db_path = _MEMORY_DB_URI
+            self._persistent = False
+        else:
+            self._db_path = _resolve_db_path(db_path)
+            self._persistent = not self._db_path.startswith('file:swingfox_sessions')
         self._lock = threading.Lock()
-        print(f'Session DB: {self._db_path}')
+        self._init_storage()
+        if self._persistent:
+            print(f'Session DB: {self._db_path}')
+        else:
+            print('Session DB: in-memory (not persistent)')
         self._migrate_json_if_needed()
 
     @property
     def db_path(self) -> str:
         return self._db_path
 
+    @property
+    def persistent(self) -> bool:
+        return self._persistent
+
+    def _init_storage(self) -> None:
+        with self._connect() as conn:
+            _ensure_schema(conn)
+
     def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self._db_path, timeout=30)
+        if self._db_path.startswith('file:'):
+            conn = sqlite3.connect(self._db_path, timeout=30, uri=True)
+        else:
+            conn = sqlite3.connect(self._db_path, timeout=30)
         conn.row_factory = sqlite3.Row
         return conn
 
     def _legacy_json_path(self) -> str:
         for path in (
-            os.path.join(os.path.dirname(self._db_path), 'tokens.json'),
             '/app/data/tokens.json',
             '/data/tokens.json',
+            os.path.join(os.path.dirname(__file__), '..', 'data', 'tokens.json'),
         ):
             if os.path.isfile(path):
                 return path
-        return os.path.join(os.path.dirname(self._db_path), 'tokens.json')
+        return '/app/data/tokens.json'
 
     def _migrate_json_if_needed(self) -> None:
         if self.count() > 0:
