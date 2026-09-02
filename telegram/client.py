@@ -94,6 +94,54 @@ class TelegramClient:
             payload['reply_markup'] = json.dumps(reply_markup)
         return self._post('sendMessage', payload)
 
+    def edit_message_text(
+        self,
+        chat_id: int,
+        message_id: int,
+        text: str,
+        reply_markup: Optional[dict] = None,
+        parse_mode: Optional[str] = 'HTML',
+    ) -> dict:
+        payload: Dict[str, Any] = {
+            'chat_id': chat_id,
+            'message_id': message_id,
+            'text': text[:4096],
+        }
+        if parse_mode:
+            payload['parse_mode'] = parse_mode
+        if reply_markup:
+            payload['reply_markup'] = json.dumps(reply_markup)
+        return self._post('editMessageText', payload)
+
+    def edit_message_media(
+        self,
+        chat_id: int,
+        message_id: int,
+        photo_url: str,
+        caption: str = '',
+        reply_markup: Optional[dict] = None,
+    ) -> dict:
+        media = {
+            'type': 'photo',
+            'media': photo_url,
+            'caption': caption[:1024],
+            'parse_mode': 'HTML',
+        }
+        payload: Dict[str, Any] = {
+            'chat_id': chat_id,
+            'message_id': message_id,
+            'media': json.dumps(media),
+        }
+        if reply_markup:
+            payload['reply_markup'] = json.dumps(reply_markup)
+        return self._post('editMessageMedia', payload)
+
+    def delete_message(self, chat_id: int, message_id: int) -> dict:
+        return self._post('deleteMessage', {
+            'chat_id': chat_id,
+            'message_id': message_id,
+        })
+
     def send_photo(self, chat_id: int, photo_url: str, caption: str = '', reply_markup: Optional[dict] = None) -> dict:
         payload: Dict[str, Any] = {
             'chat_id': chat_id,
