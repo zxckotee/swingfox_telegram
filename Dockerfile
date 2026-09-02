@@ -20,7 +20,9 @@ COPY telegram ./telegram
 COPY main.py .
 
 # Non-root user
-RUN useradd -m -u 10001 botuser && chown -R botuser:botuser /app
+RUN mkdir -p /app/data \
+    && useradd -m -u 10001 botuser \
+    && chown -R botuser:botuser /app
 USER botuser
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
