@@ -5,42 +5,133 @@ import os
 import sqlite3
 import threading
 import time
-from typing import Optional
+from typing import List, Optional
+
+
+def _app_data_db_path() -> str:
+    return '/app/data/sessions.db'
+
+
+def _default_db_path() -> str:
+    return os.path.abspath(
+        os.path.join(os.path.dirname(__file__), '..', 'data', 'sessions.db')
+    )
+
+
+def _home_db_path() -> str:
+    return os.path.join(
+        os.path.expanduser('~'),
+        '.local',
+        'share',
+        'swingfox',
+        'sessions.db',
+    )
+
+
+def _candidate_paths(requested: Optional[str] = None) -> List[str]:
+    paths: List[str] = []
+    if requested:
+        paths.append(os.path.abspath(requested))
+
+    env_path = os.getenv('SESSION_DB_PATH') or os.getenv('TOKEN_STORE_PATH')
+    if env_path:
+        paths.append(os.path.abspath(env_path))
+
+    paths.extend([
+        _app_data_db_path(),
+        _default_db_path(),
+        _home_db_path(),
+    ])
+
+    unique: List[str] = []
+    seen = set()
+    for path in paths:
+        if path not in seen:
+            seen.add(path)
+            unique.append(path)
+    return unique
+
+
+def _ensure_schema(conn: sqlite3.Connection) -> None:
+    for journal_mode in ('WAL', 'DELETE'):
+        try:
+            conn.execute(f'PRAGMA journal_mode={journal_mode}')
+            break
+        except sqlite3.Error:
+            if journal_mode == 'DELETE':
+                raise
+    conn.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS sessions (
+          telegram_id INTEGER PRIMARY KEY,
+          token TEXT,
+          login TEXT,
+          updated_at INTEGER NOT NULL
+        )
+        '''
+    )
+    conn.commit()
+
+
+def _path_is_usable(path: str) -> bool:
+    directory = os.path.dirname(path) or '.'
+    try:
+        os.makedirs(directory, exist_ok=True)
+        probe = os.path.join(directory, '.write_probe')
+        with open(probe, 'w', encoding='utf-8') as handle:
+            handle.write('1')
+        os.remove(probe)
+    except OSError as exc:
+        print(f'WARNING: session directory not writable ({directory}): {exc}')
+        return False
+
+    try:
+        conn = sqlite3.connect(path, timeout=5)
+        try:
+            _ensure_schema(conn)
+        finally:
+            conn.close()
+        return True
+    except (OSError, sqlite3.Error) as exc:
+        print(f'WARNING: SQLite path not usable ({path}): {exc}')
+        return False
+
+
+def _resolve_db_path(requested: Optional[str] = None) -> str:
+    candidates = _candidate_paths(requested)
+    for path in candidates:
+        if _path_is_usable(path):
+            return path
+
+    raise RuntimeError(
+        'No writable SQLite session path found. Tried: ' + ', '.join(candidates)
+    )
 
 
 class TokenStore:
     def __init__(self, db_path: Optional[str] = None):
-        default_path = os.path.join(
-            os.path.dirname(__file__), '..', 'data', 'sessions.db'
-        )
-        env_path = os.getenv('SESSION_DB_PATH') or os.getenv('TOKEN_STORE_PATH')
-        self._db_path = os.path.abspath(db_path or env_path or default_path)
+        self._db_path = _resolve_db_path(db_path)
         self._lock = threading.Lock()
-        os.makedirs(os.path.dirname(self._db_path), exist_ok=True)
-        self._init_db()
+        print(f'Session DB: {self._db_path}')
         self._migrate_json_if_needed()
+
+    @property
+    def db_path(self) -> str:
+        return self._db_path
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self._db_path, timeout=30)
         conn.row_factory = sqlite3.Row
         return conn
 
-    def _init_db(self) -> None:
-        with self._connect() as conn:
-            conn.execute('PRAGMA journal_mode=WAL')
-            conn.execute(
-                '''
-                CREATE TABLE IF NOT EXISTS sessions (
-                  telegram_id INTEGER PRIMARY KEY,
-                  token TEXT,
-                  login TEXT,
-                  updated_at INTEGER NOT NULL
-                )
-                '''
-            )
-            conn.commit()
-
     def _legacy_json_path(self) -> str:
+        for path in (
+            os.path.join(os.path.dirname(self._db_path), 'tokens.json'),
+            '/app/data/tokens.json',
+            '/data/tokens.json',
+        ):
+            if os.path.isfile(path):
+                return path
         return os.path.join(os.path.dirname(self._db_path), 'tokens.json')
 
     def _migrate_json_if_needed(self) -> None:
@@ -69,7 +160,7 @@ class TokenStore:
                     INSERT OR REPLACE INTO sessions (telegram_id, token, login, updated_at)
                     VALUES (?, ?, NULL, ?)
                     ''',
-                    (int(key), token, now)
+                    (int(key), token, now),
                 )
                 imported += 1
             conn.commit()
@@ -81,7 +172,7 @@ class TokenStore:
         with self._connect() as conn:
             row = conn.execute(
                 'SELECT token FROM sessions WHERE telegram_id = ?',
-                (int(telegram_id),)
+                (int(telegram_id),),
             ).fetchone()
         token = row['token'] if row else None
         return token or None
@@ -90,7 +181,7 @@ class TokenStore:
         with self._connect() as conn:
             row = conn.execute(
                 'SELECT login FROM sessions WHERE telegram_id = ?',
-                (int(telegram_id),)
+                (int(telegram_id),),
             ).fetchone()
         login = row['login'] if row else None
         return login or None
@@ -101,7 +192,7 @@ class TokenStore:
             if login is None:
                 row = conn.execute(
                     'SELECT login FROM sessions WHERE telegram_id = ?',
-                    (int(telegram_id),)
+                    (int(telegram_id),),
                 ).fetchone()
                 login = row['login'] if row else None
 
@@ -114,7 +205,7 @@ class TokenStore:
                   login = COALESCE(excluded.login, sessions.login),
                   updated_at = excluded.updated_at
                 ''',
-                (int(telegram_id), token, login, now)
+                (int(telegram_id), token, login, now),
             )
             conn.commit()
 
@@ -129,7 +220,7 @@ class TokenStore:
                   login = excluded.login,
                   updated_at = excluded.updated_at
                 ''',
-                (int(telegram_id), login, now)
+                (int(telegram_id), login, now),
             )
             conn.commit()
 
@@ -141,7 +232,7 @@ class TokenStore:
                 SET token = NULL, updated_at = ?
                 WHERE telegram_id = ?
                 ''',
-                (int(time.time()), int(telegram_id))
+                (int(time.time()), int(telegram_id)),
             )
             conn.commit()
 
@@ -158,4 +249,22 @@ class TokenStore:
         return int(row['total']) if row else 0
 
 
-token_store = TokenStore()
+_store: Optional[TokenStore] = None
+_store_lock = threading.Lock()
+
+
+def get_token_store() -> TokenStore:
+    global _store
+    if _store is None:
+        with _store_lock:
+            if _store is None:
+                _store = TokenStore()
+    return _store
+
+
+class _TokenStoreProxy:
+    def __getattr__(self, name: str):
+        return getattr(get_token_store(), name)
+
+
+token_store = _TokenStoreProxy()
