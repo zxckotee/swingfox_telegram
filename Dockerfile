@@ -17,6 +17,7 @@ COPY config ./config
 COPY handlers ./handlers
 COPY state ./state
 COPY telegram ./telegram
+COPY utils ./utils
 COPY main.py .
 
 # Non-root user
