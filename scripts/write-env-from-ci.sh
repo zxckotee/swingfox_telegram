@@ -7,7 +7,7 @@ ENV_FILE="$TARGET_DIR/.env"
 
 mkdir -p "$TARGET_DIR"
 
-PRODUCTION="${PRODUCTION:-on}"
+PRODUCTION="${PRODUCTION:-off}"
 case "${PRODUCTION,,}" in
   1|true|yes|on)
     DEFAULT_API_URL='https://127.0.0.1:3001/api'

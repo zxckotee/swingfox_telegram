@@ -2,7 +2,7 @@ import os
 from typing import List, Optional
 
 from api.swingfox_client import SwingfoxAPIError, SwingfoxClient
-from config.backend import get_backend_config
+from config.backend import get_backend_config, rewrite_uploads_url
 from config.profile_options import FIELD_LABELS
 from handlers.profile_format import format_my_profile_caption, format_swipe_profile_caption
 from handlers.profile_pickers import field_uses_picker, format_multi_display, handle_picker_callback, start_picker
@@ -29,9 +29,20 @@ PROFILE_EDIT_FIELDS = {
 
 
 def avatar_url(filename: Optional[str]) -> Optional[str]:
-    if not filename or filename == 'no_photo.jpg':
+    return media_url(filename)
+
+
+def media_url(path: Optional[str]) -> Optional[str]:
+    if not path or path == 'no_photo.jpg':
         return None
-    return f"{UPLOADS_URL}/{filename.lstrip('/')}"
+    value = str(path).strip()
+    if value.startswith('http://') or value.startswith('https://'):
+        return rewrite_uploads_url(
+            value,
+            production=_backend['production'],
+            uploads_url=UPLOADS_URL,
+        )
+    return f"{UPLOADS_URL}/{value.lstrip('/')}"
 
 
 class BotHandlers:
@@ -121,7 +132,7 @@ class BotHandlers:
         if reason == 'not_linked':
             self.tg.send_message(
                 chat_id,
-                "Сначала привяжите аккаунт через ссылку из профиля на swingfox.ru"
+                "Сначала привяжите аккаунт через ссылку из профиля на сайте"
             )
         elif reason == 'backend_unreachable':
             self.tg.send_message(
@@ -518,7 +529,7 @@ class BotHandlers:
             keyboard = self.tg.create_inline_keyboard(keyboard_rows)
 
             image = ad.get('image')
-            img_url = f"{UPLOADS_URL}/{str(image).lstrip('/')}" if image else None
+            img_url = media_url(image)
 
             if edit_message:
                 msg_id = edit_message['message_id']

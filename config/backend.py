@@ -22,6 +22,32 @@ _STAGING = {
 }
 
 
+def rewrite_site_url(url: str, *, production: bool, web_url: str) -> str:
+    """Map production site URLs to the configured web_url when bot runs on staging."""
+    if production or not url:
+        return url
+    prod_web = _PROD['web_url'].rstrip('/')
+    target_web = web_url.rstrip('/')
+    if target_web == prod_web:
+        return url
+    if url == prod_web or url.startswith(f'{prod_web}/'):
+        return f'{target_web}{url[len(prod_web):]}'
+    return url
+
+
+def rewrite_uploads_url(url: str, *, production: bool, uploads_url: str) -> str:
+    """Map production upload URLs to the configured uploads_url when bot runs on staging."""
+    if production or not url:
+        return url
+    prod_uploads = _PROD['uploads_url'].rstrip('/')
+    target_uploads = uploads_url.rstrip('/')
+    if target_uploads == prod_uploads:
+        return url
+    if url == prod_uploads or url.startswith(f'{prod_uploads}/'):
+        return f'{target_uploads}{url[len(prod_uploads):]}'
+    return url
+
+
 def is_production() -> bool:
     """PRODUCTION=on → prod backend; off/empty (default) → staging."""
     value = (os.getenv('PRODUCTION') or 'off').strip().lower()

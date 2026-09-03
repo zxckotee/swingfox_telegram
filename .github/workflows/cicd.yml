@@ -75,8 +75,10 @@ jobs:
             export TELEGRAM_API_BASE_URL='${{ secrets.TELEGRAM_API_BASE_URL }}'
             if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
               export PRODUCTION='${{ github.event.inputs.production || 'off' }}'
-            else
+            elif [ "${{ github.ref_name }}" = "prod3" ]; then
               export PRODUCTION='on'
+            else
+              export PRODUCTION='off'
             fi
 
             bash scripts/write-env-from-ci.sh "$DEPLOY_PATH"
