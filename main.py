@@ -57,8 +57,10 @@ def run_polling() -> None:
     env_label = 'production' if backend['production'] else 'staging'
     print('SwingFox Telegram bot started (polling)...')
     print(f'Backend: {env_label} → {backend["api_url"]}')
-    if api._token_store.count():
+    if api._token_store.persistent and api._token_store.count():
         print(f'Restored {api._token_store.count()} persisted session(s) from SQLite')
+    elif not api._token_store.persistent:
+        print('WARNING: sessions are in-memory only until disk space is freed')
     print(f'Session DB: {api._token_store.db_path}')
     if not os.getenv('TELEGRAM_BOT_SHARED_SECRET'):
         print('WARNING: TELEGRAM_BOT_SHARED_SECRET is not set — session refresh will fail')

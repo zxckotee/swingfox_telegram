@@ -91,6 +91,16 @@ PRODUCTION=off
 
 Сессии бота хранятся в SQLite (Docker volume `bot_sessions` → `/app/data/sessions.db`) и переживают перезапуск контейнера. Если в `.env` остался `SESSION_DB_PATH=/data/sessions.db`, удалите эту строку — иначе бот может не стартовать из‑за прав на `./data`.
 
+Если на сервере закончилось место (`No space left on device`), освободите диск:
+
+```bash
+df -h
+docker system prune -af
+docker volume prune -f
+```
+
+После освобождения места перезапустите бот. Пока диск полон, бот может работать с сессиями в памяти (не переживают рестарт).
+
 ---
 
 ## Сеть

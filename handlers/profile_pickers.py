@@ -205,6 +205,7 @@ def handle_picker_callback(
         if value is None:
             handlers.tg.answer_callback_query(cb_id, 'Неверный вариант', show_alert=True)
             return True
+        draft = session_store.get_pick_draft(user_id)
         session_store.set_pick_draft(user_id, {'partner': 'woman', 'man': value, 'profile': draft.get('profile')})
         handlers.tg.answer_callback_query(cb_id)
         handlers.tg.send_message(
