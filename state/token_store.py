@@ -156,14 +156,18 @@ class TokenStore:
         return conn
 
     def _legacy_json_path(self) -> str:
-        for path in (
+        paths: List[str] = []
+        if not self._db_path.startswith('file:'):
+            paths.append(os.path.join(os.path.dirname(self._db_path), 'tokens.json'))
+        paths.extend([
             '/app/data/tokens.json',
             '/data/tokens.json',
             os.path.join(os.path.dirname(__file__), '..', 'data', 'tokens.json'),
-        ):
+        ])
+        for path in paths:
             if os.path.isfile(path):
                 return path
-        return '/app/data/tokens.json'
+        return paths[0]
 
     def _migrate_json_if_needed(self) -> None:
         if self.count() > 0:

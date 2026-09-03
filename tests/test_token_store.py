@@ -29,7 +29,6 @@ class TokenStorePathTest(unittest.TestCase):
             self.assertEqual(store.get_login(42), 'user42')
             self.assertEqual(store.count(), 1)
 
-
     def test_memory_fallback_when_no_disk(self):
         with unittest.mock.patch('state.token_store._path_is_usable', return_value=False):
             store = TokenStore()
