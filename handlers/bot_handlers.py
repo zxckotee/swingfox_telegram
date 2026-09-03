@@ -167,10 +167,22 @@ class BotHandlers:
         return (profile.get('viptype') or 'FREE') in ('VIP', 'PREMIUM')
 
     def _subscription_url(self, user_id: int) -> Optional[str]:
-        try:
-            return self.api.web_login_code(user_id, redirect_to='/subscriptions').get('url')
-        except SwingfoxAPIError:
-            return None
+        return self.api.web_login_url(user_id, redirect_to='/subscriptions')
+
+    def _site_link(
+        self,
+        user_id: int,
+        redirect_to: str,
+        *,
+        button_text: str,
+        fallback_path: Optional[str] = None,
+    ) -> Optional[list]:
+        url = self.api.web_login_url(user_id, redirect_to=redirect_to)
+        if url:
+            return [{'text': button_text, 'url': url}]
+        if fallback_path:
+            return [{'text': button_text, 'url': f'{SITE_URL}{fallback_path}'}]
+        return None
 
     def handle_start(self, chat_id: int, user_id: int, text: str, username: Optional[str]) -> None:
         link_code = self._parse_link_start(text)
@@ -408,7 +420,7 @@ class BotHandlers:
                 elif tg_username:
                     line += f"\n  📱 @{tg_username}"
                 lines.append(line)
-            login_url = self.api.web_login_code(user_id, redirect_to='/chat').get('url')
+            login_url = self.api.web_login_url(user_id, redirect_to='/chat')
             buttons = []
             if login_url:
                 buttons.append([{'text': '💬 Открыть чаты на сайте', 'url': login_url}])
@@ -500,13 +512,7 @@ class BotHandlers:
             if tg_link:
                 keyboard_rows.append([{'text': '✉️ Написать в Telegram', 'url': tg_link}])
             if author_login:
-                try:
-                    chat_url = self.api.web_login_code(
-                        user_id,
-                        redirect_to=f'/chat/{author_login}',
-                    ).get('url')
-                except SwingfoxAPIError:
-                    chat_url = None
+                chat_url = self.api.web_login_url(user_id, redirect_to=f'/chat/{author_login}')
                 if chat_url:
                     keyboard_rows.append([{'text': '💬 Написать на сайте', 'url': chat_url}])
             keyboard = self.tg.create_inline_keyboard(keyboard_rows)
@@ -544,10 +550,13 @@ class BotHandlers:
 
     def send_web_login(self, chat_id: int, user_id: int, redirect_to: Optional[str] = None) -> None:
         try:
-            data = self.api.web_login_code(user_id, redirect_to=redirect_to)
-            url = data.get('url')
+            url = self.api.web_login_url(user_id, redirect_to=redirect_to)
             if not url:
-                self.tg.send_message(chat_id, "Не удалось получить ссылку.")
+                self.tg.send_message(
+                    chat_id,
+                    "⚠️ Автовход на сайт временно недоступен — на backend не задеплоен "
+                    "/api/telegram/web-login-code. Обновите swingfox (staging или prod) и перезапустите API.",
+                )
                 return
             self.tg.send_message(
                 chat_id,
@@ -559,8 +568,12 @@ class BotHandlers:
 
     def show_game(self, chat_id: int, user_id: int) -> None:
         try:
-            data = self.api.web_login_code(user_id, redirect_to='/game')
-            url = data.get('url')
+            play_button = self._site_link(
+                user_id,
+                '/game',
+                button_text='🎮 Играть',
+                fallback_path='/game',
+            )
             text = (
                 "🎮 <b>Игра SwingFox</b>\n\n"
                 "Парная игра на сайте: <b>вопросы</b> на совместимость и <b>фанты</b> на двоих. "
@@ -568,13 +581,16 @@ class BotHandlers:
                 "интимности и играйте вместе — от лёгких вопросов до смелых заданий.\n\n"
                 "Также доступен <b>турнирный режим</b> с видео-доказательствами и рейтингом."
             )
-            if not url:
-                self.tg.send_message(chat_id, "Не удалось получить ссылку на игру.")
-                return
+            if not play_button:
+                text += (
+                    "\n\n⚠️ Автовход сейчас недоступен — обновите backend (нужен "
+                    "<code>/api/telegram/web-login-code</code>). Кнопка ниже откроет игру без входа."
+                )
+                play_button = [{'text': '🎮 Играть', 'url': f'{SITE_URL}/game'}]
             self.tg.send_message(
                 chat_id,
                 text,
-                reply_markup=self.tg.create_inline_keyboard([[{'text': '🎮 Играть', 'url': url}]]),
+                reply_markup=self.tg.create_inline_keyboard([play_button]),
                 parse_mode='HTML',
             )
         except SwingfoxAPIError as e:
@@ -703,6 +719,15 @@ class BotHandlers:
             self.tg.send_message(
                 chat_id,
                 "Сессия устарела. Перепривяжите Telegram через ссылку в профиле на сайте."
+            )
+        elif error.error == 'API endpoint не найден' or (
+            error.status_code == 404 and 'endpoint' in (error.message or '').lower()
+        ):
+            self.tg.send_message(
+                chat_id,
+                "⚠️ На backend нет нужного API (нужен деплой swingfox с "
+                "<code>/api/telegram/web-login-code</code>).",
+                parse_mode='HTML',
             )
         else:
             self.tg.send_message(chat_id, f"Ошибка: {error.message}")
