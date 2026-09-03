@@ -247,6 +247,8 @@ class BotHandlers:
             self.show_ads(chat_id, user_id, page_index=0)
         elif text == '👤 Мой профиль':
             self.show_my_profile(chat_id, user_id)
+        elif text == '🎮 Игра':
+            self.show_game(chat_id, user_id)
         elif text == '🌐 ЛК на сайте':
             self.send_web_login(chat_id, user_id)
         else:
@@ -551,6 +553,29 @@ class BotHandlers:
                 chat_id,
                 "Нажмите кнопку, чтобы открыть личный кабинет на сайте в вашей сессии:",
                 reply_markup=self.tg.create_inline_keyboard([[{'text': '🌐 Открыть SwingFox', 'url': url}]])
+            )
+        except SwingfoxAPIError as e:
+            self.handle_api_error(chat_id, user_id, e)
+
+    def show_game(self, chat_id: int, user_id: int) -> None:
+        try:
+            data = self.api.web_login_code(user_id, redirect_to='/game')
+            url = data.get('url')
+            text = (
+                "🎮 <b>Игра SwingFox</b>\n\n"
+                "Парная игра на сайте: <b>вопросы</b> на совместимость и <b>фанты</b> на двоих. "
+                "Найдите партнёра через рулетку или пригласите по логину, выберите уровень "
+                "интимности и играйте вместе — от лёгких вопросов до смелых заданий.\n\n"
+                "Также доступен <b>турнирный режим</b> с видео-доказательствами и рейтингом."
+            )
+            if not url:
+                self.tg.send_message(chat_id, "Не удалось получить ссылку на игру.")
+                return
+            self.tg.send_message(
+                chat_id,
+                text,
+                reply_markup=self.tg.create_inline_keyboard([[{'text': '🎮 Играть', 'url': url}]]),
+                parse_mode='HTML',
             )
         except SwingfoxAPIError as e:
             self.handle_api_error(chat_id, user_id, e)
