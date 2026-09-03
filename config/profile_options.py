@@ -1,6 +1,6 @@
 """Fixed profile field options (aligned with swingfox client Profile.js / Register.js)."""
 
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 Option = Tuple[str, str]  # (stored_value, button_label)
 
@@ -58,6 +58,7 @@ PICKER_FIELDS = frozenset({
 
 MULTI_PICKER_FIELDS = frozenset({'search_status'})
 LIFESTYLE_FIELDS = frozenset({'smoking', 'alko'})
+PHYSICAL_FIELDS = frozenset({'height', 'weight'})
 
 FIELD_LABELS: Dict[str, str] = {
     'status': 'статус',
@@ -71,6 +72,17 @@ FIELD_LABELS: Dict[str, str] = {
     'height': 'рост',
     'weight': 'вес',
 }
+
+_VALUE_LABELS: Dict[str, str] = {}
+for _options in (
+    STATUS_OPTIONS,
+    SEARCH_STATUS_OPTIONS,
+    SEARCH_AGE_OPTIONS,
+    SMOKING_OPTIONS,
+    ALKO_OPTIONS,
+):
+    for _stored, _label in _options:
+        _VALUE_LABELS[_stored] = _label
 
 
 def options_for_field(field: str) -> List[Option]:
@@ -88,9 +100,9 @@ def option_value(field: str, index: int) -> str:
 
 
 def display_value(value: str) -> str:
-    if value == 'no_matter':
-        return 'Не имеет значения'
-    return value
+    if not value:
+        return '—'
+    return _VALUE_LABELS.get(value, value)
 
 
 def is_couple_status(status: str) -> bool:
@@ -105,3 +117,31 @@ def split_multi_field(raw: str) -> List[str]:
 
 def join_multi_field(values: List[str]) -> str:
     return '&&'.join(values)
+
+
+def split_couple_field(raw: str, field: str) -> Tuple[Optional[str], Optional[str]]:
+    """Split man_woman stored value without breaking keys like no_matter."""
+    if not raw or not str(raw).strip():
+        return None, None
+    value = str(raw).strip()
+    if field in PHYSICAL_FIELDS:
+        if '_' not in value:
+            return value, None
+        man, woman = value.split('_', 1)
+        return man or None, woman or None
+
+    if field not in LIFESTYLE_FIELDS:
+        if '_' not in value:
+            return value, None
+        man, woman = value.split('_', 1)
+        return man or None, woman or None
+
+    keys = [key for key, _ in options_for_field(field)]
+    for woman_key in sorted(keys, key=len, reverse=True):
+        if value == woman_key:
+            return None, woman_key
+        suffix = f'_{woman_key}'
+        if value.endswith(suffix):
+            man = value[:-len(suffix)]
+            return man or None, woman_key
+    return value, None

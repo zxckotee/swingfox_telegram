@@ -4,7 +4,7 @@ from typing import List, Optional
 from api.swingfox_client import SwingfoxAPIError, SwingfoxClient
 from config.backend import get_backend_config
 from config.profile_options import FIELD_LABELS
-from handlers.profile_format import format_my_profile_caption
+from handlers.profile_format import format_my_profile_caption, format_swipe_profile_caption
 from handlers.profile_pickers import field_uses_picker, format_multi_display, handle_picker_callback, start_picker
 from state.session_store import session_store
 from utils.telegram_register_link import build_register_url
@@ -34,21 +34,6 @@ def avatar_url(filename: Optional[str]) -> Optional[str]:
     return f"{UPLOADS_URL}/{filename.lstrip('/')}"
 
 
-def format_profile_caption(profile: dict) -> str:
-    p = profile.get('profile', profile)
-    parts = [
-        f"<b>{p.get('login', '—')}</b>",
-        p.get('status') or '',
-        p.get('city') or '',
-        p.get('info') or ''
-    ]
-    if p.get('telegram_link'):
-        parts.append(f"Telegram: {p['telegram_link']}")
-    elif p.get('mobile'):
-        parts.append(f"Контакт: {p['mobile']}")
-    return '\n'.join(x for x in parts if x)[:1024]
-
-
 class BotHandlers:
     def __init__(self, api: SwingfoxClient):
         self.api = api
@@ -72,6 +57,25 @@ class BotHandlers:
             message,
             reply_markup=self.tg.main_menu_keyboard()
         )
+
+    def _prompt_session_lost(self, chat_id: int, reason: str) -> None:
+        lines = [
+            "👋 Сессия в боте была сброшена (перезапуск или очистка Docker).",
+            "",
+            "Привязка на сайте, скорее всего, <b>сохранилась</b> — пропал только локальный вход в бота.",
+            "",
+            "🔗 Войдите на сайте → профиль → «Telegram-бот» → получите ссылку и нажмите её.",
+        ]
+        if reason in ('invalid_signature', 'missing_shared_secret'):
+            lines.append("\n⚠️ Ошибка конфигурации (TELEGRAM_BOT_SHARED_SECRET).")
+        elif reason == 'backend_unreachable':
+            lines.append(
+                "\n⚠️ Backend недоступен (staging не запущен?) — попробуйте /start позже "
+                "или ссылку из профиля на сайте."
+            )
+        elif reason == 'API endpoint не найден' or 'endpoint' in reason.lower():
+            lines.append("\n⚠️ На backend нет /api/telegram/token/refresh — нужен деплой API.")
+        self.tg.send_message(chat_id, '\n'.join(lines), parse_mode='HTML')
 
     def _prompt_unlinked(self, chat_id: int, user_id: int) -> None:
         reg_url = build_register_url(user_id, SITE_URL)
@@ -119,10 +123,17 @@ class BotHandlers:
                 chat_id,
                 "Сначала привяжите аккаунт через ссылку из профиля на swingfox.ru"
             )
-        elif reason in ('invalid_signature', 'missing_shared_secret', 'backend_unreachable'):
+        elif reason == 'backend_unreachable':
             self.tg.send_message(
                 chat_id,
-                "⚠️ Временная ошибка авторизации. Нажмите /start через минуту."
+                "⚠️ Backend недоступен (staging мог не подняться после деплоя). "
+                "Попробуйте /start через несколько минут.\n\n"
+                "Если Telegram привязан на сайте — ссылка в профиле → «Telegram-бот»."
+            )
+        elif reason in ('invalid_signature', 'missing_shared_secret'):
+            self.tg.send_message(
+                chat_id,
+                "⚠️ Ошибка конфигурации бота (shared secret). Обратитесь к администратору."
             )
         else:
             self.tg.send_message(
@@ -134,18 +145,32 @@ class BotHandlers:
     def _profile_search_ready(self, profile: dict) -> bool:
         return bool((profile.get('search_status') or '').strip() and (profile.get('search_age') or '').strip())
 
-    def _clear_swipe_keyboard(self, user_id: int) -> None:
+    def _clear_swipe_keyboard(self, user_id: int, keep_back: bool = True) -> None:
         last = session_store.get_last_swipe_message(user_id)
         if not last:
             return
+        keyboard = (
+            {'inline_keyboard': [[{'text': '↩️ Назад', 'callback_data': 'swipe:back'}]]}
+            if keep_back else
+            {'inline_keyboard': []}
+        )
         try:
             self.tg.edit_message_reply_markup(
                 last['chat_id'],
                 last['message_id'],
-                {'inline_keyboard': []}
+                keyboard
             )
         except Exception as exc:
             print(f'Failed to clear swipe keyboard: {exc}')
+
+    def _has_paid_subscription(self, profile: dict) -> bool:
+        return (profile.get('viptype') or 'FREE') in ('VIP', 'PREMIUM')
+
+    def _subscription_url(self, user_id: int) -> Optional[str]:
+        try:
+            return self.api.web_login_code(user_id, redirect_to='/subscriptions').get('url')
+        except SwingfoxAPIError:
+            return None
 
     def handle_start(self, chat_id: int, user_id: int, text: str, username: Optional[str]) -> None:
         link_code = self._parse_link_start(text)
@@ -191,7 +216,11 @@ class BotHandlers:
             )
             return
 
-        self._prompt_link(chat_id, user_id)
+        reason = self.api.last_auth_error or 'not_linked'
+        if reason == 'not_linked':
+            self._prompt_unlinked(chat_id, user_id)
+        else:
+            self._prompt_session_lost(chat_id, reason)
 
     def handle_text(self, chat_id: int, user_id: int, text: str) -> None:
         if not self._require_auth(chat_id, user_id):
@@ -312,7 +341,7 @@ class BotHandlers:
                 return
 
             login = profile.get('login') or profile.get('profile', {}).get('login')
-            caption = format_profile_caption({'profile': profile})
+            caption = format_swipe_profile_caption({'profile': profile})
             ava = avatar_url(profile.get('ava') or profile.get('profile', {}).get('ava'))
 
             row1 = [
@@ -325,8 +354,7 @@ class BotHandlers:
             if tg_link:
                 rows.append([{'text': '📱 Telegram', 'url': tg_link}])
 
-            if (my_profile.get('viptype') or '') in ('VIP', 'PREMIUM'):
-                rows.append([{'text': '↩️ Назад', 'callback_data': 'swipe:back'}])
+            rows.append([{'text': '↩️ Назад', 'callback_data': 'swipe:back'}])
 
             keyboard = self.tg.create_inline_keyboard(rows)
             if ava:
@@ -436,11 +464,27 @@ class BotHandlers:
 
             ad = ads_list[page_index]
             title = ad.get('title', 'Без названия')
-            text = (
-                f"<b>{title}</b>\n"
-                f"{ad.get('type', '')} · {ad.get('city', '')}\n\n"
-                f"{(ad.get('description') or '')[:800]}"
-            )
+            author = ad.get('author') or {}
+            author_login = author.get('login') or ad.get('author')
+            tg_link = author.get('telegram_link')
+            tg_username = author.get('telegram_username')
+            if not tg_link and tg_username:
+                tg_link = f'https://t.me/{tg_username.lstrip("@")}'
+
+            text_lines = [
+                f"<b>{title}</b>",
+                f"{ad.get('type', '')} · {ad.get('city', '')}",
+                '',
+            ]
+            if author_login:
+                text_lines.append(f"Автор: <b>{author_login}</b>")
+            if tg_link:
+                tg_label = f"@{tg_username.lstrip('@')}" if tg_username else 'Telegram'
+                text_lines.append(f'<a href="{tg_link}">{tg_label}</a>')
+            text_lines.append('')
+            text_lines.append((ad.get('description') or '')[:800])
+            text = '\n'.join(text_lines)
+
             nav = []
             if len(ads_list) > 1:
                 nav = [
@@ -451,7 +495,18 @@ class BotHandlers:
             keyboard_rows = []
             if nav:
                 keyboard_rows.append(nav)
-            keyboard_rows.append([{'text': 'Витрина на сайте', 'url': f'{SITE_URL}/ads'}])
+            if tg_link:
+                keyboard_rows.append([{'text': '✉️ Написать в Telegram', 'url': tg_link}])
+            if author_login:
+                try:
+                    chat_url = self.api.web_login_code(
+                        user_id,
+                        redirect_to=f'/chat/{author_login}',
+                    ).get('url')
+                except SwingfoxAPIError:
+                    chat_url = None
+                if chat_url:
+                    keyboard_rows.append([{'text': '💬 Написать на сайте', 'url': chat_url}])
             keyboard = self.tg.create_inline_keyboard(keyboard_rows)
 
             image = ad.get('image')
@@ -525,8 +580,25 @@ class BotHandlers:
                 self.tg.answer_callback_query(cb_id, 'Пропущено')
                 self.show_next_profile(chat_id, user_id)
             elif data == 'swipe:back':
-                self.tg.answer_callback_query(cb_id)
-                self.show_next_profile(chat_id, user_id, direction='back')
+                try:
+                    my_profile = self.api.get_my_profile(user_id)
+                except SwingfoxAPIError:
+                    my_profile = {}
+                if not self._has_paid_subscription(my_profile):
+                    self.tg.answer_callback_query(cb_id)
+                    sub_url = self._subscription_url(user_id)
+                    buttons = []
+                    if sub_url:
+                        buttons.append([{'text': '💎 Оформить подписку', 'url': sub_url}])
+                    self.tg.send_message(
+                        chat_id,
+                        "↩️ Возврат к предыдущей анкете доступен с подпиской <b>VIP</b> или <b>PREMIUM</b>.",
+                        reply_markup=self.tg.create_inline_keyboard(buttons) if buttons else None,
+                        parse_mode='HTML',
+                    )
+                else:
+                    self.tg.answer_callback_query(cb_id)
+                    self.show_next_profile(chat_id, user_id, direction='back')
             elif data == 'profile:open':
                 self.tg.answer_callback_query(cb_id)
                 self.show_my_profile(chat_id, user_id)
