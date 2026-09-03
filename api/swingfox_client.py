@@ -218,6 +218,24 @@ class SwingfoxClient:
             body['redirect_to'] = redirect_to
         return self._request('POST', '/telegram/web-login-code', None, json=body, auth=False)
 
+    def web_login_url(self, telegram_id: int, redirect_to: Optional[str] = None) -> Optional[str]:
+        """One-time SSO URL for the site, or None if backend endpoint is missing."""
+        try:
+            return self.web_login_code(telegram_id, redirect_to=redirect_to).get('url')
+        except SwingfoxAPIError as exc:
+            missing = (
+                exc.status_code == 404
+                or exc.error in ('API endpoint не найден', 'not_found')
+                or 'endpoint' in (exc.message or '').lower()
+            )
+            if missing:
+                print(
+                    f'WARNING: /telegram/web-login-code unavailable for {telegram_id} '
+                    f'({exc.error}: {exc.message})'
+                )
+                return None
+            raise
+
     def get_swipe_profile(self, telegram_id: int, direction: str = 'forward') -> Optional[dict]:
         data = self._request('GET', f'/swipe/profiles?direction={direction}', telegram_id)
         if isinstance(data, list):
