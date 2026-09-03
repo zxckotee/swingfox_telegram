@@ -507,7 +507,6 @@ class BotHandlers:
                     chat_url = None
                 if chat_url:
                     keyboard_rows.append([{'text': '💬 Написать на сайте', 'url': chat_url}])
-            keyboard_rows.append([{'text': 'Витрина на сайте', 'url': f'{SITE_URL}/ads'}])
             keyboard = self.tg.create_inline_keyboard(keyboard_rows)
 
             image = ad.get('image')
