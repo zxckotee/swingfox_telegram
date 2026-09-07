@@ -12,6 +12,7 @@ class ProfileOptionsTest(unittest.TestCase):
     def test_picker_fields(self):
         self.assertTrue(field_uses_picker('status'))
         self.assertTrue(field_uses_picker('search_status'))
+        self.assertFalse(field_uses_picker('search_age'))
         self.assertFalse(field_uses_picker('city'))
 
     def test_multi_join_split(self):

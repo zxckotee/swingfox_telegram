@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 import requests
 from urllib3.exceptions import InsecureRequestWarning
 
-from config.backend import get_backend_config
+from config.backend import get_backend_config, rewrite_site_url
 from state.token_store import token_store
 
 AUTH_RETRY_ERRORS = frozenset({'invalid_token', 'token_expired'})
@@ -24,6 +24,8 @@ class SwingfoxClient:
     def __init__(self, api_url: Optional[str] = None, shared_secret: Optional[str] = None):
         backend = get_backend_config()
         self.api_url = (api_url or backend['api_url']).rstrip('/')
+        self._production = backend['production']
+        self._web_url = backend['web_url']
         self.shared_secret = shared_secret or os.getenv('TELEGRAM_BOT_SHARED_SECRET', '')
         self._token_store = token_store
         self.last_auth_error: Optional[str] = None
@@ -221,7 +223,14 @@ class SwingfoxClient:
     def web_login_url(self, telegram_id: int, redirect_to: Optional[str] = None) -> Optional[str]:
         """One-time SSO URL for the site, or None if backend endpoint is missing."""
         try:
-            return self.web_login_code(telegram_id, redirect_to=redirect_to).get('url')
+            url = self.web_login_code(telegram_id, redirect_to=redirect_to).get('url')
+            if url:
+                return rewrite_site_url(
+                    url,
+                    production=self._production,
+                    web_url=self._web_url,
+                )
+            return None
         except SwingfoxAPIError as exc:
             missing = (
                 exc.status_code == 404
