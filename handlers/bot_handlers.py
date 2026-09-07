@@ -245,19 +245,19 @@ class BotHandlers:
         else:
             self._prompt_session_lost(chat_id, reason)
 
-    def handle_text(self, chat_id: int, user_id: int, text: str) -> None:
-        if not self._require_auth(chat_id, user_id):
-            return
+    @staticmethod
+    def _is_main_menu_text(text: str) -> bool:
+        return text in TelegramClient.MAIN_MENU_BUTTONS
 
+    def _clear_waiting_state(self, user_id: int) -> None:
         state = session_store.get_state(user_id)
-        if state and state.startswith('profile_edit:'):
-            field = state.split(':', 1)[1]
-            if field_uses_picker(field):
-                self.tg.send_message(chat_id, "Используйте кнопки под сообщением для выбора значения.")
-                return
-            self._apply_profile_field(chat_id, user_id, field, text)
+        if not state:
             return
+        if state.startswith('profile_edit:') or state.startswith('profile_pick:'):
+            session_store.set_state(user_id, None)
+            session_store.clear_pick_draft(user_id)
 
+    def _dispatch_menu_text(self, chat_id: int, user_id: int, text: str) -> None:
         if text == '🔥 Анкеты':
             self.show_next_profile(chat_id, user_id)
         elif text == '🔔 Уведомления':
@@ -274,8 +274,30 @@ class BotHandlers:
             self.show_game(chat_id, user_id)
         elif text == '🌐 ЛК на сайте':
             self.send_web_login(chat_id, user_id)
-        else:
-            self.tg.send_message(chat_id, "Выберите пункт меню 👇", reply_markup=self.tg.main_menu_keyboard())
+
+    def handle_text(self, chat_id: int, user_id: int, text: str) -> None:
+        if not self._require_auth(chat_id, user_id):
+            return
+
+        if self._is_main_menu_text(text):
+            self._clear_waiting_state(user_id)
+            self._dispatch_menu_text(chat_id, user_id, text)
+            return
+
+        state = session_store.get_state(user_id)
+        if state and state.startswith('profile_edit:'):
+            field = state.split(':', 1)[1]
+            if field_uses_picker(field):
+                self.tg.send_message(chat_id, "Используйте кнопки под сообщением для выбора значения.")
+                return
+            self._apply_profile_field(chat_id, user_id, field, text)
+            return
+
+        if state and state.startswith('profile_pick:'):
+            self.tg.send_message(chat_id, "Используйте кнопки под сообщением для выбора значения.")
+            return
+
+        self.tg.send_message(chat_id, "Выберите пункт меню 👇", reply_markup=self.tg.main_menu_keyboard())
 
     def handle_photo(self, chat_id: int, user_id: int, photo_sizes: list) -> None:
         if not self._require_auth(chat_id, user_id):
