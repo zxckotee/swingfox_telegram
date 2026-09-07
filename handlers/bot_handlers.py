@@ -3,7 +3,7 @@ from typing import List, Optional
 
 from api.swingfox_client import SwingfoxAPIError, SwingfoxClient
 from config.backend import get_backend_config, rewrite_uploads_url
-from config.profile_options import FIELD_LABELS
+from config.profile_options import FIELD_LABELS, is_couple_status, parse_search_age_input
 from handlers.profile_format import format_my_profile_caption, format_swipe_profile_caption
 from handlers.profile_pickers import field_uses_picker, format_multi_display, handle_picker_callback, start_picker
 from state.session_store import session_store
@@ -302,7 +302,18 @@ class BotHandlers:
             self._send_auth_failure(chat_id, user_id)
             return
         try:
-            payload = {field: value.strip()}
+            payload_value = value.strip()
+            if field == 'search_age':
+                profile = self.api.get_my_profile(user_id)
+                normalized, error = parse_search_age_input(
+                    payload_value,
+                    is_couple_status(profile.get('status') or ''),
+                )
+                if error:
+                    self.tg.send_message(chat_id, f"❌ {error}")
+                    return
+                payload_value = normalized or ''
+            payload = {field: payload_value}
             self.api.call_with_auth_retry(
                 user_id,
                 lambda: self.api.update_profile(user_id, payload),
@@ -670,7 +681,28 @@ class BotHandlers:
                     session_store.set_state(user_id, f'profile_edit:{field}')
                     label = PROFILE_EDIT_FIELDS.get(field, field)
                     self.tg.answer_callback_query(cb_id)
-                    self.tg.send_message(chat_id, f"Введите новое значение: <b>{label}</b>", parse_mode='HTML')
+                    if field == 'search_age':
+                        try:
+                            profile = self.api.get_my_profile(user_id)
+                            couple = is_couple_status(profile.get('status') or '')
+                        except SwingfoxAPIError as e:
+                            self.handle_api_error(chat_id, user_id, e)
+                            return
+                        hint = (
+                            "Введите возраст числом.\n"
+                            "Для пары — два числа через пробел или «_» (сначала мужчина, потом женщина).\n"
+                            "Примеры: <code>38</code> или <code>42 36</code>"
+                            if couple else
+                            "Введите ваш возраст числом.\n"
+                            "Пример: <code>32</code>"
+                        )
+                        self.tg.send_message(
+                            chat_id,
+                            f"<b>{label.capitalize()}</b>\n{hint}",
+                            parse_mode='HTML',
+                        )
+                    else:
+                        self.tg.send_message(chat_id, f"Введите новое значение: <b>{label}</b>", parse_mode='HTML')
             elif data.startswith('prof:'):
                 if not handle_picker_callback(self, chat_id, user_id, data, cb_id):
                     self.tg.answer_callback_query(cb_id)

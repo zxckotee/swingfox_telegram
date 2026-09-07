@@ -51,7 +51,6 @@ ALKO_OPTIONS: List[Option] = [
 PICKER_FIELDS = frozenset({
     'status',
     'search_status',
-    'search_age',
     'smoking',
     'alko',
 })
@@ -103,6 +102,51 @@ def display_value(value: str) -> str:
     if not value:
         return '—'
     return _VALUE_LABELS.get(value, value)
+
+
+def format_search_age_display(raw: Optional[str]) -> str:
+    if not raw or not str(raw).strip():
+        return '—'
+    value = str(raw).strip()
+    if value in _VALUE_LABELS:
+        return _VALUE_LABELS[value]
+    if '_' in value:
+        man, woman = value.split('_', 1)
+        if man.isdigit() and woman.isdigit():
+            return f'М: {man} · Ж: {woman}'
+    if value.isdigit():
+        return value
+    return value
+
+
+def parse_search_age_input(raw: str, is_couple: bool) -> Tuple[Optional[str], Optional[str]]:
+    text = (raw or '').strip().replace(',', ' ').replace('–', '-')
+    if not text:
+        return None, 'Укажите возраст числом.'
+
+    if '_' in text and ' ' not in text:
+        parts = [part.strip() for part in text.split('_') if part.strip()]
+    else:
+        parts = [part.strip() for part in text.split() if part.strip()]
+
+    if not parts:
+        return None, 'Укажите возраст числом.'
+
+    for part in parts:
+        if not part.isdigit():
+            return None, 'Допустимы только числа. Пример: 32 или 42 36.'
+        age = int(part)
+        if age < 18 or age > 99:
+            return None, 'Возраст должен быть от 18 до 99 лет.'
+
+    if is_couple:
+        if len(parts) != 2:
+            return None, 'Для пары укажите два числа: сначала мужчина, затем женщина (например: 42 36).'
+        return f'{parts[0]}_{parts[1]}', None
+
+    if len(parts) != 1:
+        return None, 'Укажите один возраст числом (например: 32).'
+    return parts[0], None
 
 
 def is_couple_status(status: str) -> bool:

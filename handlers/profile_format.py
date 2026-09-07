@@ -1,6 +1,6 @@
 from typing import Optional
 
-from config.profile_options import display_value, split_couple_field
+from config.profile_options import display_value, format_search_age_display, split_couple_field
 from handlers.profile_pickers import format_multi_display
 
 
@@ -63,7 +63,7 @@ def format_my_profile_caption(profile: dict) -> str:
         f"Статус: {profile.get('status') or '—'}",
         f"Город: {profile.get('city') or '—'}",
         f"Кого ищу: {format_multi_display(profile.get('search_status') or '')}",
-        f"Возраст: {display_value(profile.get('search_age') or '') or '—'}",
+        f"Возраст: {format_search_age_display(profile.get('search_age'))}",
     ]
     _append_profile_details(lines, profile)
     lines.append(f"О себе: {(profile.get('info') or '—')[:200]}")
@@ -90,7 +90,7 @@ def format_swipe_profile_caption(profile: dict) -> str:
     if search_status:
         lines.append(f"Кого ищу: {format_multi_display(search_status)}")
     if search_age:
-        lines.append(f"Возраст: {display_value(search_age)}")
+        lines.append(f"Возраст: {format_search_age_display(search_age)}")
 
     _append_profile_details(lines, p)
 
