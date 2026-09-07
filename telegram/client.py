@@ -227,6 +227,17 @@ class TelegramClient:
             raise RuntimeError(data.get('description') or 'getMe failed')
         return data.get('result', {})
 
+    MAIN_MENU_BUTTONS = (
+        '🔥 Анкеты',
+        '🔔 Уведомления',
+        '💬 Чаты',
+        '🎪 Клубы',
+        '📢 Объявления',
+        '👤 Мой профиль',
+        '🎮 Игра',
+        '🌐 ЛК на сайте',
+    )
+
     @staticmethod
     def main_menu_keyboard() -> dict:
         return TelegramClient.create_reply_keyboard([
