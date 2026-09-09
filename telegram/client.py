@@ -77,6 +77,10 @@ class TelegramClient:
                 raise RuntimeError(_sanitize_error(str(exc))) from exc
         raise RuntimeError(_sanitize_error(str(last_error))) from last_error
 
+    def _with_content_protection(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        payload['protect_content'] = True
+        return payload
+
     def send_message(
         self,
         chat_id: int,
@@ -92,7 +96,7 @@ class TelegramClient:
             payload['parse_mode'] = parse_mode
         if reply_markup:
             payload['reply_markup'] = json.dumps(reply_markup)
-        return self._post('sendMessage', payload)
+        return self._post('sendMessage', self._with_content_protection(payload))
 
     def edit_message_text(
         self,
@@ -134,7 +138,7 @@ class TelegramClient:
         }
         if reply_markup:
             payload['reply_markup'] = json.dumps(reply_markup)
-        return self._post('editMessageMedia', payload)
+        return self._post('editMessageMedia', self._with_content_protection(payload))
 
     def delete_message(self, chat_id: int, message_id: int) -> dict:
         return self._post('deleteMessage', {
@@ -151,7 +155,7 @@ class TelegramClient:
         }
         if reply_markup:
             payload['reply_markup'] = json.dumps(reply_markup)
-        return self._post('sendPhoto', payload)
+        return self._post('sendPhoto', self._with_content_protection(payload))
 
     def answer_callback_query(self, callback_query_id: str, text: str = '', show_alert: bool = False) -> dict:
         return self._post('answerCallbackQuery', {
