@@ -376,6 +376,64 @@ class BotHandlers:
         except SwingfoxAPIError as e:
             self.handle_api_error(chat_id, user_id, e)
 
+    def start_incoming_likes_swipe(self, chat_id: int, user_id: int) -> None:
+        try:
+            profiles = self.api.get_incoming_likes(user_id)
+            if not profiles:
+                self.tg.send_message(chat_id, "Пока нет новых симпатий.")
+                return
+            session_store.set_incoming_likes(user_id, profiles)
+            self.show_next_incoming_like(chat_id, user_id)
+        except SwingfoxAPIError as e:
+            self.handle_api_error(chat_id, user_id, e)
+
+    def show_next_incoming_like(self, chat_id: int, user_id: int) -> None:
+        queue, index, total = session_store.get_incoming_likes_state(user_id)
+        if not queue or index >= len(queue):
+            session_store.clear_incoming_likes(user_id)
+            self.tg.send_message(chat_id, "Вы просмотрели всех, кому вы понравились.")
+            return
+
+        profile = queue[index]
+        login = profile.get('login')
+        if not login:
+            session_store.advance_incoming_like(user_id)
+            self.show_next_incoming_like(chat_id, user_id)
+            return
+
+        current_number = index + 1
+        header = f"❤️ Вам понравились <b>{total}</b> человек(а). Анкета {current_number} из {total}"
+        caption = f"{header}\n\n{format_swipe_profile_caption({'profile': profile})}"
+        ava = avatar_url(profile.get('ava'))
+
+        row1 = [
+            {'text': '❤️', 'callback_data': f'inlikes:like:{login}'},
+            {'text': '👎', 'callback_data': f'inlikes:dislike:{login}'},
+        ]
+        rows: List[list] = [row1]
+        tg_link = profile.get('telegram_link')
+        if tg_link:
+            rows.append([{'text': '📱 Telegram', 'url': tg_link}])
+        keyboard = self.tg.create_inline_keyboard(rows)
+
+        if ava:
+            sent = self.tg.send_photo(chat_id, ava, caption, reply_markup=keyboard)
+        else:
+            sent = self.tg.send_message(chat_id, caption, reply_markup=keyboard, parse_mode='HTML')
+        message = sent.get('result') or {}
+        if message.get('message_id'):
+            session_store.set_last_swipe_message(user_id, chat_id, message['message_id'])
+
+    def _advance_incoming_like(self, chat_id: int, user_id: int, login: str, action: str) -> str:
+        self._clear_swipe_keyboard(user_id, keep_back=False)
+        if action == 'like':
+            result = self.api.like(user_id, login)
+            if result.get('match') or result.get('match_created'):
+                return '💕 Взаимная симпатия!'
+            return '❤️ Лайк отправлен'
+        self.api.dislike(user_id, login)
+        return 'Пропущено'
+
     def show_next_profile(self, chat_id: int, user_id: int, direction: str = 'forward') -> None:
         try:
             my_profile = {}
@@ -653,7 +711,37 @@ class BotHandlers:
             return
 
         try:
-            if data.startswith('like:'):
+            if data == 'inlikes:yes':
+                self.tg.answer_callback_query(cb_id)
+                self.start_incoming_likes_swipe(chat_id, user_id)
+            elif data == 'inlikes:no':
+                self.tg.answer_callback_query(cb_id, 'Хорошо')
+                try:
+                    self.tg.edit_message_reply_markup(chat_id, callback_query['message']['message_id'], {'inline_keyboard': []})
+                except Exception:
+                    pass
+            elif data.startswith('inlikes:like:'):
+                login = data.split(':', 2)[2]
+                msg = self._advance_incoming_like(chat_id, user_id, login, 'like')
+                session_store.advance_incoming_like(user_id)
+                self.tg.answer_callback_query(cb_id, msg)
+                self.show_next_incoming_like(chat_id, user_id)
+            elif data.startswith('inlikes:dislike:'):
+                login = data.split(':', 2)[2]
+                msg = self._advance_incoming_like(chat_id, user_id, login, 'dislike')
+                session_store.advance_incoming_like(user_id)
+                self.tg.answer_callback_query(cb_id, msg)
+                self.show_next_incoming_like(chat_id, user_id)
+            elif data == 'swipe:start':
+                self.tg.answer_callback_query(cb_id)
+                self.show_next_profile(chat_id, user_id)
+            elif data == 'swipe:dismiss':
+                self.tg.answer_callback_query(cb_id, 'Хорошо')
+                try:
+                    self.tg.edit_message_reply_markup(chat_id, callback_query['message']['message_id'], {'inline_keyboard': []})
+                except Exception:
+                    pass
+            elif data.startswith('like:'):
                 login = data.split(':', 1)[1]
                 self._clear_swipe_keyboard(user_id)
                 result = self.api.like(user_id, login)

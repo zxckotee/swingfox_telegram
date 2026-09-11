@@ -69,5 +69,28 @@ class SessionStore:
     def clear_pick_draft(self, telegram_id: int) -> None:
         self.get(telegram_id).pop('pick_draft', None)
 
+    def set_incoming_likes(self, telegram_id: int, profiles: List[dict]) -> None:
+        entry = self.get(telegram_id)
+        entry['incoming_likes_queue'] = profiles
+        entry['incoming_likes_index'] = 0
+        entry['incoming_likes_total'] = len(profiles)
+
+    def get_incoming_likes_state(self, telegram_id: int) -> tuple:
+        entry = self.get(telegram_id)
+        queue = entry.get('incoming_likes_queue') or []
+        index = entry.get('incoming_likes_index', 0)
+        total = entry.get('incoming_likes_total', len(queue))
+        return queue, index, total
+
+    def advance_incoming_like(self, telegram_id: int) -> None:
+        entry = self.get(telegram_id)
+        entry['incoming_likes_index'] = int(entry.get('incoming_likes_index', 0)) + 1
+
+    def clear_incoming_likes(self, telegram_id: int) -> None:
+        entry = self.get(telegram_id)
+        entry.pop('incoming_likes_queue', None)
+        entry.pop('incoming_likes_index', None)
+        entry.pop('incoming_likes_total', None)
+
 
 session_store = SessionStore()

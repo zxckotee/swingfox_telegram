@@ -272,6 +272,12 @@ class SwingfoxClient:
             'source': 'telegram'
         })
 
+    def get_incoming_likes(self, telegram_id: int) -> list:
+        data = self._request('GET', '/swipe/incoming-likes', telegram_id)
+        if isinstance(data, dict):
+            return data.get('profiles') or []
+        return []
+
     def get_profile(self, telegram_id: int, login: str) -> dict:
         return self._request('GET', f'/users/profile/{login}', telegram_id)
 
