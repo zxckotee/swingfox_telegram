@@ -264,6 +264,7 @@ class BotHandlers:
 
     def _dispatch_menu_text(self, chat_id: int, user_id: int, text: str) -> None:
         if text == '🔥 Анкеты':
+            session_store.set_swipe_city_only(user_id, False)
             self.show_next_profile(chat_id, user_id)
         elif text == '🔔 Уведомления':
             self.show_notifications(chat_id, user_id)
@@ -453,9 +454,17 @@ class BotHandlers:
                 )
                 return
 
-            profile = self.api.get_swipe_profile(user_id, direction=direction)
+            city_only = session_store.get_swipe_city_only(user_id)
+            profile = self.api.get_swipe_profile(user_id, direction=direction, city_only=city_only)
             if not profile:
-                self.tg.send_message(chat_id, "Анкеты закончились. Загляните позже!")
+                if city_only:
+                    session_store.set_swipe_city_only(user_id, False)
+                    self.tg.send_message(
+                        chat_id,
+                        "Анкеты в вашем городе закончились. Откройте «🔥 Анкеты» в меню для просмотра всех."
+                    )
+                else:
+                    self.tg.send_message(chat_id, "Анкеты закончились. Загляните позже!")
                 return
 
             login = profile.get('login') or profile.get('profile', {}).get('login')
@@ -732,7 +741,8 @@ class BotHandlers:
                 session_store.advance_incoming_like(user_id)
                 self.tg.answer_callback_query(cb_id, msg)
                 self.show_next_incoming_like(chat_id, user_id)
-            elif data == 'swipe:start':
+            elif data in ('swipe:start', 'swipe:start:city'):
+                session_store.set_swipe_city_only(user_id, data == 'swipe:start:city')
                 self.tg.answer_callback_query(cb_id)
                 self.show_next_profile(chat_id, user_id)
             elif data == 'swipe:dismiss':
