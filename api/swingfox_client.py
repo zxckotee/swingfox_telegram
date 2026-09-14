@@ -245,8 +245,17 @@ class SwingfoxClient:
                 return None
             raise
 
-    def get_swipe_profile(self, telegram_id: int, direction: str = 'forward') -> Optional[dict]:
-        data = self._request('GET', f'/swipe/profiles?direction={direction}', telegram_id)
+    def get_swipe_profile(
+        self,
+        telegram_id: int,
+        direction: str = 'forward',
+        *,
+        city_only: bool = False,
+    ) -> Optional[dict]:
+        query = f'direction={direction}'
+        if city_only:
+            query += '&city_only=1'
+        data = self._request('GET', f'/swipe/profiles?{query}', telegram_id)
         if isinstance(data, list):
             return data[0] if data else None
         if isinstance(data, dict) and data.get('login'):

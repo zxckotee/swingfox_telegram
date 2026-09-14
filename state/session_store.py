@@ -92,5 +92,15 @@ class SessionStore:
         entry.pop('incoming_likes_index', None)
         entry.pop('incoming_likes_total', None)
 
+    def set_swipe_city_only(self, telegram_id: int, enabled: bool) -> None:
+        entry = self.get(telegram_id)
+        if enabled:
+            entry['swipe_city_only'] = True
+        else:
+            entry.pop('swipe_city_only', None)
+
+    def get_swipe_city_only(self, telegram_id: int) -> bool:
+        return bool(self.get(telegram_id).get('swipe_city_only'))
+
 
 session_store = SessionStore()
