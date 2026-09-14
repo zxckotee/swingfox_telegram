@@ -77,6 +77,17 @@ class ProfileCaptionTest(unittest.TestCase):
         self.assertIn('Кого ищу:', caption)
         self.assertIn('https://t.me/anna', caption)
 
+    def test_format_swipe_profile_hides_mobile(self):
+        caption = format_swipe_profile_caption({
+            'login': 'anna',
+            'status': 'Женщина',
+            'city': 'Казань',
+            'mobile': '+7 978 295-62-02',
+            'info': 'Привет',
+        })
+        self.assertNotIn('Контакт:', caption)
+        self.assertNotIn('+7', caption)
+
 
 class RegisterLinkTest(unittest.TestCase):
     def test_build_register_url(self):

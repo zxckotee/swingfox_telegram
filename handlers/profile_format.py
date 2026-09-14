@@ -42,7 +42,7 @@ def format_lifestyle_field(label: str, raw: Optional[str]) -> Optional[str]:
     return f"{label}: {display_value(value)}"
 
 
-def _append_profile_details(lines: list, profile: dict) -> None:
+def _append_profile_details(lines: list, profile: dict, *, show_contact: bool = False) -> None:
     for line in (
         format_physical_field('Рост', profile.get('height'), 'см'),
         format_physical_field('Вес', profile.get('weight'), 'кг'),
@@ -51,6 +51,9 @@ def _append_profile_details(lines: list, profile: dict) -> None:
     ):
         if line:
             lines.append(line)
+
+    if not show_contact:
+        return
 
     mobile = profile.get('mobile')
     if mobile and str(mobile).strip():
@@ -65,7 +68,7 @@ def format_my_profile_caption(profile: dict) -> str:
         f"Кого ищу: {format_multi_display(profile.get('search_status') or '')}",
         f"Возраст: {format_search_age_display(profile.get('search_age'))}",
     ]
-    _append_profile_details(lines, profile)
+    _append_profile_details(lines, profile, show_contact=True)
     lines.append(f"О себе: {(profile.get('info') or '—')[:200]}")
     return '\n'.join(lines)[:1024]
 
