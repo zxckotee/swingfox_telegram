@@ -24,8 +24,7 @@ PROFILE_EDIT_FIELDS = {
     'status': 'статус',
     'info': 'о себе',
     'search_status': 'кого ищу',
-    'search_age': 'возраст для поиска',
-    'mobile': 'контакт',
+    'date': 'возраст',
     'height': 'рост',
     'weight': 'вес',
     'smoking': 'курение',
@@ -331,7 +330,7 @@ class BotHandlers:
             return
         try:
             is_couple = False
-            if field in ('search_age', 'height', 'weight'):
+            if field in ('date', 'height', 'weight'):
                 profile = self.api.get_my_profile(user_id)
                 is_couple = is_couple_status(profile.get('status') or '')
             normalized, error = parse_profile_field_input(field, value, is_couple=is_couple)
@@ -362,12 +361,11 @@ class BotHandlers:
                  {'text': 'Статус', 'callback_data': 'profile:edit:status'}],
                 [{'text': 'О себе', 'callback_data': 'profile:edit:info'},
                  {'text': 'Кого ищу', 'callback_data': 'profile:edit:search_status'}],
-                [{'text': 'Возраст', 'callback_data': 'profile:edit:search_age'},
-                 {'text': 'Контакт', 'callback_data': 'profile:edit:mobile'}],
-                [{'text': 'Рост', 'callback_data': 'profile:edit:height'},
-                 {'text': 'Вес', 'callback_data': 'profile:edit:weight'}],
-                [{'text': 'Курение', 'callback_data': 'profile:edit:smoking'},
-                 {'text': 'Алкоголь', 'callback_data': 'profile:edit:alko'}],
+                [{'text': 'Возраст', 'callback_data': 'profile:edit:date'},
+                 {'text': 'Рост', 'callback_data': 'profile:edit:height'}],
+                [{'text': 'Вес', 'callback_data': 'profile:edit:weight'},
+                 {'text': 'Курение', 'callback_data': 'profile:edit:smoking'}],
+                [{'text': 'Алкоголь', 'callback_data': 'profile:edit:alko'}],
                 [{'text': '📷 Фото', 'callback_data': 'profile:edit:photo'}],
             ])
             if ava:

@@ -1,6 +1,11 @@
 from typing import Optional
 
-from config.profile_options import display_value, format_search_age_display, split_couple_field
+from config.profile_options import (
+    display_value,
+    format_profile_age_display,
+    format_search_age_display,
+    split_couple_field,
+)
 from handlers.profile_pickers import format_multi_display
 
 
@@ -42,7 +47,7 @@ def format_lifestyle_field(label: str, raw: Optional[str]) -> Optional[str]:
     return f"{label}: {display_value(value)}"
 
 
-def _append_profile_details(lines: list, profile: dict, *, show_contact: bool = False) -> None:
+def _append_profile_details(lines: list, profile: dict) -> None:
     for line in (
         format_physical_field('Рост', profile.get('height'), 'см'),
         format_physical_field('Вес', profile.get('weight'), 'кг'),
@@ -52,13 +57,6 @@ def _append_profile_details(lines: list, profile: dict, *, show_contact: bool = 
         if line:
             lines.append(line)
 
-    if not show_contact:
-        return
-
-    mobile = profile.get('mobile')
-    if mobile and str(mobile).strip():
-        lines.append(f"Контакт: {mobile}")
-
 
 def format_my_profile_caption(profile: dict) -> str:
     lines = [
@@ -66,9 +64,9 @@ def format_my_profile_caption(profile: dict) -> str:
         f"Статус: {profile.get('status') or '—'}",
         f"Город: {profile.get('city') or '—'}",
         f"Кого ищу: {format_multi_display(profile.get('search_status') or '')}",
-        f"Возраст: {format_search_age_display(profile.get('search_age'))}",
+        f"Возраст: {format_profile_age_display(profile.get('date'), fallback_age=profile.get('age'))}",
     ]
-    _append_profile_details(lines, profile, show_contact=True)
+    _append_profile_details(lines, profile)
     lines.append(f"О себе: {(profile.get('info') or '—')[:200]}")
     return '\n'.join(lines)[:1024]
 

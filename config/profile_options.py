@@ -1,6 +1,7 @@
 """Fixed profile field options (aligned with swingfox client Profile.js / Register.js)."""
 
 import re
+from datetime import date
 from typing import Callable, Dict, List, Optional, Tuple
 
 Option = Tuple[str, str]  # (stored_value, button_label)
@@ -59,8 +60,8 @@ PICKER_FIELDS = frozenset({
 MULTI_PICKER_FIELDS = frozenset({'search_status'})
 LIFESTYLE_FIELDS = frozenset({'smoking', 'alko'})
 PHYSICAL_FIELDS = frozenset({'height', 'weight'})
-TEXT_INPUT_FIELDS = frozenset({'city', 'info', 'mobile', 'search_age', 'height', 'weight'})
-NUMERIC_INPUT_FIELDS = frozenset({'search_age', 'height', 'weight'})
+TEXT_INPUT_FIELDS = frozenset({'city', 'info', 'mobile', 'date', 'search_age', 'height', 'weight'})
+NUMERIC_INPUT_FIELDS = frozenset({'date', 'search_age', 'height', 'weight'})
 
 CITY_MIN_LEN = 2
 CITY_MAX_LEN = 100
@@ -79,6 +80,7 @@ FIELD_LABELS: Dict[str, str] = {
     'status': 'статус',
     'search_status': 'кого ищу',
     'search_age': 'возраст для поиска',
+    'date': 'возраст',
     'smoking': 'курение',
     'alko': 'алкоголь',
     'city': 'город',
@@ -118,6 +120,59 @@ def display_value(value: str) -> str:
     if not value:
         return '—'
     return _VALUE_LABELS.get(value, value)
+
+
+def _parse_birth_part(date_part: str) -> Optional[date]:
+    if not date_part or not str(date_part).strip():
+        return None
+    value = str(date_part).strip()
+    if '-' in value:
+        parts = value.split('-')
+        if len(parts) >= 3:
+            try:
+                return date(int(parts[0]), int(parts[1]), int(parts[2]))
+            except ValueError:
+                pass
+        try:
+            return date.fromisoformat(value[:10])
+        except ValueError:
+            pass
+    if len(value) == 4 and value.isdigit():
+        return date(int(value), 1, 1)
+    return None
+
+
+def calculate_age_from_birth(birth: Optional[date]) -> Optional[int]:
+    if birth is None:
+        return None
+    today = date.today()
+    age = today.year - birth.year
+    if (today.month, today.day) < (birth.month, birth.day):
+        age -= 1
+    return age if age >= 0 else None
+
+
+def format_profile_age_display(raw_date: Optional[str], *, fallback_age: Optional[int] = None) -> str:
+    if raw_date and str(raw_date).strip():
+        value = str(raw_date).strip()
+        if '_' in value:
+            man_part, woman_part = value.split('_', 1)
+            parts = []
+            man_age = calculate_age_from_birth(_parse_birth_part(man_part))
+            woman_age = calculate_age_from_birth(_parse_birth_part(woman_part))
+            if man_age is not None:
+                parts.append(f'М: {man_age}')
+            if woman_age is not None:
+                parts.append(f'Ж: {woman_age}')
+            if parts:
+                return ' · '.join(parts)
+        else:
+            age = calculate_age_from_birth(_parse_birth_part(value))
+            if age is not None:
+                return str(age)
+    if fallback_age is not None:
+        return str(fallback_age)
+    return '—'
 
 
 def format_search_age_display(raw: Optional[str]) -> str:
@@ -259,6 +314,29 @@ def parse_weight_input(raw: str, is_couple: bool) -> Tuple[Optional[str], Option
     )
 
 
+def parse_date_input(raw: str, is_couple: bool) -> Tuple[Optional[str], Optional[str]]:
+    parts = split_numeric_parts(raw)
+    if not parts:
+        return None, 'Укажите возраст числом.'
+
+    for part in parts:
+        if not part.isdigit():
+            return None, 'Допустимы только числа. Пример: 32 или 42 36.'
+        age = int(part)
+        if age < 18 or age > 99:
+            return None, 'Возраст должен быть от 18 до 99 лет.'
+
+    current_year = date.today().year
+    if is_couple:
+        if len(parts) != 2:
+            return None, 'Для пары укажите два числа: сначала мужчина, затем женщина (например: 42 36).'
+        return f'{current_year - int(parts[0])}_{current_year - int(parts[1])}', None
+
+    if len(parts) != 1:
+        return None, 'Укажите один возраст числом (например: 32).'
+    return str(current_year - int(parts[0])), None
+
+
 def parse_search_age_input(raw: str, is_couple: bool) -> Tuple[Optional[str], Optional[str]]:
     parts = split_numeric_parts(raw)
     if not parts:
@@ -285,6 +363,7 @@ _FIELD_PARSERS: Dict[str, Callable[..., Tuple[Optional[str], Optional[str]]]] = 
     'city': lambda raw, is_couple=False: parse_city_input(raw),
     'info': lambda raw, is_couple=False: parse_info_input(raw),
     'mobile': lambda raw, is_couple=False: parse_mobile_input(raw),
+    'date': parse_date_input,
     'search_age': parse_search_age_input,
     'height': parse_height_input,
     'weight': parse_weight_input,
@@ -317,13 +396,23 @@ def profile_field_input_hint(field: str, is_couple: bool = False) -> str:
             'Пример: <code>+7 900 123-45-67</code>\n'
             'Чтобы убрать контакт — отправьте пустое сообщение или «-».'
         ),
-        'search_age': (
-            'Введите возраст числом.\n'
+        'date': (
+            'Введите ваш возраст числом.\n'
             'Для пары — два числа через пробел или «_» (сначала мужчина, потом женщина).\n'
             'Диапазон: 18–99.\n'
             'Примеры: <code>38</code> или <code>42 36</code>'
             if is_couple else
             'Введите ваш возраст числом.\n'
+            'Диапазон: 18–99.\n'
+            'Пример: <code>32</code>'
+        ),
+        'search_age': (
+            'Введите возраст для поиска числом.\n'
+            'Для пары — два числа через пробел или «_» (сначала мужчина, потом женщина).\n'
+            'Диапазон: 18–99.\n'
+            'Примеры: <code>38</code> или <code>42 36</code>'
+            if is_couple else
+            'Введите возраст для поиска числом.\n'
             'Диапазон: 18–99.\n'
             'Пример: <code>32</code>'
         ),

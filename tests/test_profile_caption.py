@@ -19,6 +19,7 @@ class ProfileCaptionTest(unittest.TestCase):
             'city': 'Москва',
             'search_status': 'Женщина',
             'search_age': 'С ровестниками или с разницей +/- 5 лет',
+            'date': '1990',
             'height': '180',
             'weight': '78',
             'mobile': '+7 900 000-00-00',
@@ -28,10 +29,12 @@ class ProfileCaptionTest(unittest.TestCase):
         })
         self.assertIn('Рост: 180 см', caption)
         self.assertIn('Вес: 78 кг', caption)
-        self.assertIn('Контакт: +7 900 000-00-00', caption)
+        self.assertNotIn('Контакт:', caption)
+        self.assertNotIn('+7 900', caption)
         self.assertIn('Курение:', caption)
         self.assertIn('Алкоголь:', caption)
-        self.assertIn('±5 лет', caption)
+        self.assertIn('Возраст:', caption)
+        self.assertNotIn('±5 лет', caption)
 
     def test_format_couple_lifestyle(self):
         line = format_lifestyle_field('Курение', 'no_matter_Не курю и не переношу табачного дыма')
