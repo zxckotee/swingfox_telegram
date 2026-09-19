@@ -41,6 +41,15 @@ def _is_transient_poll_error(exc: BaseException) -> bool:
     return any(m in text for m in markers)
 
 
+def _is_webhook_conflict_error(exc: BaseException) -> bool:
+    text = str(exc).lower()
+    return 'webhook' in text and (
+        'getupdates' in text
+        or 'setwebhook' in text
+        or 'conflict' in text
+    )
+
+
 class TelegramClient:
     """Telegram Bot API client with legacy-style long polling."""
 
@@ -230,6 +239,25 @@ class TelegramClient:
         if not data.get('ok'):
             raise RuntimeError(data.get('description') or 'getMe failed')
         return data.get('result', {})
+
+    def get_webhook_info(self) -> dict:
+        response = requests.get(f'{BASE_URL}/getWebhookInfo', proxies=PROXIES, timeout=30)
+        data = response.json()
+        if not data.get('ok'):
+            raise RuntimeError(_sanitize_error(data.get('description') or 'getWebhookInfo failed'))
+        return data.get('result', {})
+
+    def delete_webhook(self, drop_pending_updates: bool = False) -> dict:
+        return self._post('deleteWebhook', {
+            'drop_pending_updates': drop_pending_updates,
+        })
+
+    def ensure_polling_mode(self) -> None:
+        info = self.get_webhook_info()
+        url = (info.get('url') or '').strip()
+        if url:
+            print(f'Webhook was active ({url}); clearing for long polling...')
+        self.delete_webhook()
 
     MAIN_MENU_BUTTONS = (
         '🔥 Анкеты',

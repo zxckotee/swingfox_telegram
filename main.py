@@ -7,7 +7,7 @@ from requests.exceptions import RequestException
 from api.swingfox_client import SwingfoxClient, SwingfoxAPIError
 from config.backend import get_backend_config
 from handlers.bot_handlers import BotHandlers
-from telegram.client import TelegramClient, _is_transient_poll_error
+from telegram.client import TelegramClient, _is_transient_poll_error, _is_webhook_conflict_error
 
 load_dotenv()
 
@@ -72,6 +72,12 @@ def run_polling() -> None:
     except Exception as exc:
         _print_startup_hints(exc)
 
+    try:
+        tg.ensure_polling_mode()
+        print('Polling mode enabled (webhook cleared if it was set)')
+    except Exception as exc:
+        print(f'WARNING: could not switch bot to polling mode: {exc}')
+
     last_update_id = 0
 
     while True:
@@ -88,12 +94,28 @@ def run_polling() -> None:
             print('Stopped.')
             break
         except RequestException as exc:
+            if _is_webhook_conflict_error(exc):
+                print('Webhook conflict detected; clearing webhook and resuming polling...')
+                try:
+                    tg.delete_webhook()
+                except Exception as clear_exc:
+                    print(f'Failed to clear webhook: {clear_exc}')
+                time.sleep(2)
+                continue
             if _is_transient_poll_error(exc):
                 time.sleep(2)
                 continue
             print(f'Error: {exc}')
             time.sleep(5)
         except Exception as exc:
+            if _is_webhook_conflict_error(exc):
+                print('Webhook conflict detected; clearing webhook and resuming polling...')
+                try:
+                    tg.delete_webhook()
+                except Exception as clear_exc:
+                    print(f'Failed to clear webhook: {clear_exc}')
+                time.sleep(2)
+                continue
             if _is_transient_poll_error(exc):
                 time.sleep(2)
                 continue
