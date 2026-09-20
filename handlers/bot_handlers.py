@@ -709,135 +709,164 @@ class BotHandlers:
 
     def handle_callback(self, callback_query: dict) -> None:
         cb_id = callback_query['id']
-        chat_id = callback_query['message']['chat']['id']
-        user_id = callback_query['from']['id']
+        message = callback_query.get('message') or {}
+        chat = message.get('chat') or {}
+        chat_id = chat.get('id')
+        user_id = (callback_query.get('from') or {}).get('id')
         data = callback_query.get('data', '')
+        answered = False
 
-        if not self.api.ensure_authenticated(user_id):
-            self.tg.answer_callback_query(cb_id, 'Привяжите аккаунт на сайте', show_alert=True)
+        def ack(text: str = '', show_alert: bool = False) -> None:
+            nonlocal answered
+            if answered:
+                return
+            try:
+                self.tg.answer_callback_query(cb_id, text, show_alert=show_alert)
+                answered = True
+            except Exception as exc:
+                print(f'answerCallbackQuery failed [{data}]: {exc}')
+
+        if not chat_id or not user_id:
+            ack('Ошибка: не удалось определить чат', show_alert=True)
             return
 
         try:
-            if data == 'inlikes:yes':
-                self.tg.answer_callback_query(cb_id)
-                self.start_incoming_likes_swipe(chat_id, user_id)
-            elif data == 'inlikes:no':
-                self.tg.answer_callback_query(cb_id, 'Хорошо')
-                try:
-                    self.tg.edit_message_reply_markup(chat_id, callback_query['message']['message_id'], {'inline_keyboard': []})
-                except Exception:
-                    pass
-            elif data.startswith('inlikes:like:'):
-                login = data.split(':', 2)[2]
-                msg = self._advance_incoming_like(chat_id, user_id, login, 'like')
-                session_store.advance_incoming_like(user_id)
-                self.tg.answer_callback_query(cb_id, msg)
-                self.show_next_incoming_like(chat_id, user_id)
-            elif data.startswith('inlikes:dislike:'):
-                login = data.split(':', 2)[2]
-                msg = self._advance_incoming_like(chat_id, user_id, login, 'dislike')
-                session_store.advance_incoming_like(user_id)
-                self.tg.answer_callback_query(cb_id, msg)
-                self.show_next_incoming_like(chat_id, user_id)
-            elif data in ('swipe:start', 'swipe:start:city'):
-                session_store.set_swipe_city_only(user_id, data == 'swipe:start:city')
-                self.tg.answer_callback_query(cb_id)
-                self.show_next_profile(chat_id, user_id)
-            elif data == 'swipe:dismiss':
-                self.tg.answer_callback_query(cb_id, 'Хорошо')
-                try:
-                    self.tg.edit_message_reply_markup(chat_id, callback_query['message']['message_id'], {'inline_keyboard': []})
-                except Exception:
-                    pass
-            elif data.startswith('like:'):
-                login = data.split(':', 1)[1]
-                self._clear_swipe_keyboard(user_id)
-                result = self.api.like(user_id, login)
-                msg = '💕 Взаимная симпатия!' if result.get('match') else '❤️ Лайк отправлен'
-                self.tg.answer_callback_query(cb_id, msg)
-                self.show_next_profile(chat_id, user_id)
-            elif data.startswith('dislike:'):
-                login = data.split(':', 1)[1]
-                self._clear_swipe_keyboard(user_id)
-                self.api.dislike(user_id, login)
-                self.tg.answer_callback_query(cb_id, 'Пропущено')
-                self.show_next_profile(chat_id, user_id)
-            elif data == 'swipe:back':
-                try:
-                    my_profile = self.api.get_my_profile(user_id)
-                except SwingfoxAPIError:
-                    my_profile = {}
-                if not self._has_paid_subscription(my_profile):
-                    self.tg.answer_callback_query(cb_id)
-                    sub_url = self._subscription_url(user_id)
-                    buttons = []
-                    if sub_url:
-                        buttons.append([{'text': '💎 Оформить подписку', 'url': sub_url}])
-                    self.tg.send_message(
-                        chat_id,
-                        "↩️ Возврат к предыдущей анкете доступен с подпиской <b>VIP</b> или <b>PREMIUM</b>.",
-                        reply_markup=self.tg.create_inline_keyboard(buttons) if buttons else None,
-                        parse_mode='HTML',
-                    )
-                else:
-                    self.tg.answer_callback_query(cb_id)
-                    self.show_next_profile(chat_id, user_id, direction='back')
-            elif data == 'profile:open':
-                self.tg.answer_callback_query(cb_id)
-                self.show_my_profile(chat_id, user_id)
-            elif data.startswith('profile:edit:'):
-                field = data.split(':', 2)[2]
-                if field == 'photo':
-                    session_store.set_state(user_id, 'profile_edit:photo')
-                    self.tg.answer_callback_query(cb_id)
-                    self.tg.send_message(chat_id, "Отправьте новое фото профиля.")
-                elif field_uses_picker(field):
-                    self.tg.answer_callback_query(cb_id)
+            if not self.api.ensure_authenticated(user_id):
+                ack('Привяжите аккаунт на сайте', show_alert=True)
+                return
+
+            try:
+                if data == 'inlikes:yes':
+                    ack()
+                    self.start_incoming_likes_swipe(chat_id, user_id)
+                elif data == 'inlikes:no':
+                    ack('Хорошо')
                     try:
-                        start_picker(self, chat_id, user_id, field)
-                    except SwingfoxAPIError as e:
-                        self.handle_api_error(chat_id, user_id, e)
-                else:
-                    session_store.set_state(user_id, f'profile_edit:{field}')
-                    self.tg.answer_callback_query(cb_id)
+                        self.tg.edit_message_reply_markup(
+                            chat_id,
+                            callback_query['message']['message_id'],
+                            {'inline_keyboard': []},
+                        )
+                    except Exception:
+                        pass
+                elif data.startswith('inlikes:like:'):
+                    login = data.split(':', 2)[2]
+                    msg = self._advance_incoming_like(chat_id, user_id, login, 'like')
+                    session_store.advance_incoming_like(user_id)
+                    ack(msg)
+                    self.show_next_incoming_like(chat_id, user_id)
+                elif data.startswith('inlikes:dislike:'):
+                    login = data.split(':', 2)[2]
+                    msg = self._advance_incoming_like(chat_id, user_id, login, 'dislike')
+                    session_store.advance_incoming_like(user_id)
+                    ack(msg)
+                    self.show_next_incoming_like(chat_id, user_id)
+                elif data in ('swipe:start', 'swipe:start:city'):
+                    session_store.set_swipe_city_only(user_id, data == 'swipe:start:city')
+                    ack()
+                    self.show_next_profile(chat_id, user_id)
+                elif data == 'swipe:dismiss':
+                    ack('Хорошо')
                     try:
-                        profile = self.api.get_my_profile(user_id)
-                        couple = is_couple_status(profile.get('status') or '')
-                    except SwingfoxAPIError as e:
-                        self.handle_api_error(chat_id, user_id, e)
-                        return
-                    self.tg.send_message(
-                        chat_id,
-                        profile_field_input_hint(field, is_couple=couple),
-                        parse_mode='HTML',
-                    )
-            elif data.startswith('prof:'):
-                if not handle_picker_callback(self, chat_id, user_id, data, cb_id):
-                    self.tg.answer_callback_query(cb_id)
-            elif data == 'ads:prev':
-                ads_list, idx = session_store.get_ads_state(user_id)
-                self.tg.answer_callback_query(cb_id)
-                self.show_ads(chat_id, user_id, page_index=max(0, idx - 1), edit_message=callback_query.get('message'))
-            elif data == 'ads:next':
-                ads_list, idx = session_store.get_ads_state(user_id)
-                self.tg.answer_callback_query(cb_id)
-                next_idx = idx + 1 if idx + 1 < len(ads_list) else 0
-                self.show_ads(chat_id, user_id, page_index=next_idx, edit_message=callback_query.get('message'))
-            elif data == 'ads:noop':
-                self.tg.answer_callback_query(cb_id)
-            elif data.startswith('gi:accept:'):
-                invite_id = data.split(':', 2)[2]
-                self.api.accept_game_invite(user_id, invite_id)
-                self.tg.answer_callback_query(cb_id, 'Приглашение принято ✅')
-            elif data.startswith('gi:decline:'):
-                invite_id = data.split(':', 2)[2]
-                self.api.decline_game_invite(user_id, invite_id)
-                self.tg.answer_callback_query(cb_id, 'Приглашение отклонено')
-            else:
-                self.tg.answer_callback_query(cb_id)
-        except SwingfoxAPIError as e:
-            self.tg.answer_callback_query(cb_id, e.message[:200], show_alert=True)
-            self.handle_api_error(chat_id, user_id, e)
+                        self.tg.edit_message_reply_markup(
+                            chat_id,
+                            callback_query['message']['message_id'],
+                            {'inline_keyboard': []},
+                        )
+                    except Exception:
+                        pass
+                elif data.startswith('like:'):
+                    login = data.split(':', 1)[1]
+                    self._clear_swipe_keyboard(user_id)
+                    result = self.api.like(user_id, login)
+                    msg = '💕 Взаимная симпатия!' if result.get('match') else '❤️ Лайк отправлен'
+                    ack(msg)
+                    self.show_next_profile(chat_id, user_id)
+                elif data.startswith('dislike:'):
+                    login = data.split(':', 1)[1]
+                    self._clear_swipe_keyboard(user_id)
+                    self.api.dislike(user_id, login)
+                    ack('Пропущено')
+                    self.show_next_profile(chat_id, user_id)
+                elif data == 'swipe:back':
+                    try:
+                        my_profile = self.api.get_my_profile(user_id)
+                    except SwingfoxAPIError:
+                        my_profile = {}
+                    if not self._has_paid_subscription(my_profile):
+                        ack()
+                        sub_url = self._subscription_url(user_id)
+                        buttons = []
+                        if sub_url:
+                            buttons.append([{'text': '💎 Оформить подписку', 'url': sub_url}])
+                        self.tg.send_message(
+                            chat_id,
+                            "↩️ Возврат к предыдущей анкете доступен с подпиской <b>VIP</b> или <b>PREMIUM</b>.",
+                            reply_markup=self.tg.create_inline_keyboard(buttons) if buttons else None,
+                            parse_mode='HTML',
+                        )
+                    else:
+                        ack()
+                        self.show_next_profile(chat_id, user_id, direction='back')
+                elif data == 'profile:open':
+                    ack()
+                    self.show_my_profile(chat_id, user_id)
+                elif data.startswith('profile:edit:'):
+                    field = data.split(':', 2)[2]
+                    ack()
+                    if field == 'photo':
+                        session_store.set_state(user_id, 'profile_edit:photo')
+                        self.tg.send_message(chat_id, "Отправьте новое фото профиля.")
+                    elif field_uses_picker(field):
+                        try:
+                            start_picker(self, chat_id, user_id, field)
+                        except SwingfoxAPIError as e:
+                            self.handle_api_error(chat_id, user_id, e)
+                    else:
+                        session_store.set_state(user_id, f'profile_edit:{field}')
+                        try:
+                            profile = self.api.get_my_profile(user_id)
+                            couple = is_couple_status(profile.get('status') or '')
+                        except SwingfoxAPIError as e:
+                            self.handle_api_error(chat_id, user_id, e)
+                            return
+                        self.tg.send_message(
+                            chat_id,
+                            profile_field_input_hint(field, is_couple=couple),
+                            parse_mode='HTML',
+                        )
+                elif data.startswith('prof:'):
+                    if not handle_picker_callback(self, chat_id, user_id, data, cb_id):
+                        ack()
+                elif data == 'ads:prev':
+                    ads_list, idx = session_store.get_ads_state(user_id)
+                    ack()
+                    self.show_ads(chat_id, user_id, page_index=max(0, idx - 1), edit_message=callback_query.get('message'))
+                elif data == 'ads:next':
+                    ads_list, idx = session_store.get_ads_state(user_id)
+                    ack()
+                    next_idx = idx + 1 if idx + 1 < len(ads_list) else 0
+                    self.show_ads(chat_id, user_id, page_index=next_idx, edit_message=callback_query.get('message'))
+                elif data == 'ads:noop':
+                    ack()
+                elif data.startswith('gi:accept:'):
+                    invite_id = data.split(':', 2)[2]
+                    self.api.accept_game_invite(user_id, invite_id)
+                    ack('Приглашение принято ✅')
+                elif data.startswith('gi:decline:'):
+                    invite_id = data.split(':', 2)[2]
+                    self.api.decline_game_invite(user_id, invite_id)
+                    ack('Приглашение отклонено')
+                else:
+                    ack()
+            except SwingfoxAPIError as e:
+                ack(e.message[:200], show_alert=True)
+                self.handle_api_error(chat_id, user_id, e)
+        except Exception as exc:
+            print(f'Callback handler error [{data}]: {exc}')
+            ack('Ошибка обработки. Попробуйте ещё раз.', show_alert=True)
+        finally:
+            ack()
 
     def handle_api_error(self, chat_id: int, user_id: int, error: SwingfoxAPIError) -> None:
         if error.error == 'like_limit':

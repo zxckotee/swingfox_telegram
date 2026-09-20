@@ -64,13 +64,28 @@ class TelegramClient:
     def create_inline_keyboard(rows: List[List[dict]]) -> dict:
         return {'inline_keyboard': rows}
 
+    @staticmethod
+    def _encode_form_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+        encoded: Dict[str, Any] = {}
+        for key, value in payload.items():
+            if value is None:
+                continue
+            if isinstance(value, bool):
+                if value:
+                    encoded[key] = 'true'
+                continue
+            if value != '':
+                encoded[key] = value
+        return encoded
+
     def _post(self, path: str, payload: Dict[str, Any]) -> dict:
         last_error: Optional[Exception] = None
+        form_payload = self._encode_form_payload(payload)
         for attempt in range(POST_RETRIES):
             try:
                 response = requests.post(
                     f'{BASE_URL}/{path}',
-                    data=payload,
+                    data=form_payload,
                     proxies=PROXIES,
                     timeout=(15, 60)
                 )
@@ -167,11 +182,12 @@ class TelegramClient:
         return self._post('sendPhoto', self._with_content_protection(payload))
 
     def answer_callback_query(self, callback_query_id: str, text: str = '', show_alert: bool = False) -> dict:
-        return self._post('answerCallbackQuery', {
-            'callback_query_id': callback_query_id,
-            'text': text,
-            'show_alert': show_alert
-        })
+        payload: Dict[str, Any] = {'callback_query_id': callback_query_id}
+        if text:
+            payload['text'] = text[:200]
+        if show_alert:
+            payload['show_alert'] = True
+        return self._post('answerCallbackQuery', payload)
 
     def edit_message_reply_markup(
         self,
