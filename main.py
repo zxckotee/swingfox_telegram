@@ -34,7 +34,9 @@ def _process_update(handlers: BotHandlers, update: dict) -> None:
                 handlers.handle_photo(chat_id, user_id, msg['photo'])
 
         elif 'callback_query' in update:
-            handlers.handle_callback(update['callback_query'])
+            callback = update['callback_query']
+            print(f"Callback: {callback.get('data', '')} from {callback.get('from', {}).get('id')}")
+            handlers.handle_callback(callback)
     except SwingfoxAPIError as exc:
         chat_id = None
         if 'message' in update:
