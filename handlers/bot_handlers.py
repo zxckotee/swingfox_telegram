@@ -730,9 +730,19 @@ class BotHandlers:
             ack('Ошибка: не удалось определить чат', show_alert=True)
             return
 
+        # Stop the loading spinner before any slow backend / auth work.
+        if not data.startswith('prof:'):
+            ack()
+
         try:
             if not self.api.ensure_authenticated(user_id):
-                ack('Привяжите аккаунт на сайте', show_alert=True)
+                if data.startswith('prof:'):
+                    ack('Привяжите аккаунт на сайте', show_alert=True)
+                else:
+                    self.tg.send_message(
+                        chat_id,
+                        'Привяжите аккаунт на сайте через ссылку в профиле на сайте.',
+                    )
                 return
 
             try:
@@ -813,7 +823,6 @@ class BotHandlers:
                     self.show_my_profile(chat_id, user_id)
                 elif data.startswith('profile:edit:'):
                     field = data.split(':', 2)[2]
-                    ack()
                     if field == 'photo':
                         session_store.set_state(user_id, 'profile_edit:photo')
                         self.tg.send_message(chat_id, "Отправьте новое фото профиля.")
