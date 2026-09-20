@@ -707,14 +707,14 @@ class BotHandlers:
         except SwingfoxAPIError as e:
             self.handle_api_error(chat_id, user_id, e)
 
-    def handle_callback(self, callback_query: dict) -> None:
+    def handle_callback(self, callback_query: dict, *, pre_acknowledged: bool = False) -> None:
         cb_id = callback_query['id']
         message = callback_query.get('message') or {}
         chat = message.get('chat') or {}
         chat_id = chat.get('id')
         user_id = (callback_query.get('from') or {}).get('id')
         data = callback_query.get('data', '')
-        answered = False
+        answered = pre_acknowledged
 
         def ack(text: str = '', show_alert: bool = False) -> None:
             nonlocal answered

@@ -1,3 +1,4 @@
+import json
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -17,10 +18,21 @@ class TelegramClientPayloadTest(unittest.TestCase):
         self.assertEqual(encoded['text'], 'hello')
         self.assertNotIn('empty', encoded)
 
-    @patch.object(TelegramClient, '_post')
-    def test_answer_callback_query_omits_empty_text(self, mock_post):
+    @patch('telegram.client.requests.get')
+    def test_answer_callback_query_uses_get(self, mock_get):
+        mock_get.return_value = MagicMock(json=lambda: {'ok': True, 'result': True})
         TelegramClient().answer_callback_query('cb-1')
-        mock_post.assert_called_once_with('answerCallbackQuery', {'callback_query_id': 'cb-1'})
+        mock_get.assert_called_once()
+        params = mock_get.call_args.kwargs.get('params') or mock_get.call_args[1].get('params')
+        self.assertEqual(params['callback_query_id'], 'cb-1')
+        self.assertNotIn('text', params)
+
+    @patch('telegram.client.requests.get')
+    def test_get_updates_allowed_updates_json(self, mock_get):
+        mock_get.return_value = MagicMock(json=lambda: {'ok': True, 'result': []})
+        TelegramClient().get_updates(offset=10)
+        params = mock_get.call_args.kwargs.get('params') or mock_get.call_args[1].get('params')
+        self.assertEqual(json.loads(params['allowed_updates']), ['message', 'callback_query'])
 
 
 if __name__ == '__main__':

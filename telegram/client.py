@@ -191,12 +191,21 @@ class TelegramClient:
         return self._post('sendPhoto', self._with_content_protection(payload))
 
     def answer_callback_query(self, callback_query_id: str, text: str = '', show_alert: bool = False) -> dict:
-        payload: Dict[str, Any] = {'callback_query_id': callback_query_id}
+        params: Dict[str, Any] = {'callback_query_id': str(callback_query_id)}
         if text:
-            payload['text'] = text[:200]
+            params['text'] = text[:200]
         if show_alert:
-            payload['show_alert'] = True
-        return self._post('answerCallbackQuery', payload)
+            params['show_alert'] = 'true'
+        response = requests.get(
+            f'{BASE_URL}/answerCallbackQuery',
+            params=params,
+            proxies=PROXIES,
+            timeout=30,
+        )
+        data = response.json()
+        if not data.get('ok'):
+            raise RuntimeError(_sanitize_error(data.get('description') or 'answerCallbackQuery failed'))
+        return data
 
     def edit_message_reply_markup(
         self,
@@ -234,9 +243,10 @@ class TelegramClient:
         return response.content
 
     def get_updates(self, offset: Optional[int] = None, timeout: int = 30) -> list:
+        # Telegram expects allowed_updates as a JSON array in one query param.
         params: Dict[str, Any] = {
             'timeout': timeout,
-            'allowed_updates': ['message', 'callback_query']
+            'allowed_updates': json.dumps(['message', 'callback_query']),
         }
         if offset:
             params['offset'] = offset

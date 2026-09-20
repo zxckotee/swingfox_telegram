@@ -40,8 +40,15 @@ def _process_update(handlers: BotHandlers, update: dict) -> None:
 
         elif 'callback_query' in update:
             callback = update['callback_query']
-            print(f"Callback: {callback.get('data', '')} from {callback.get('from', {}).get('id')}")
-            handlers.handle_callback(callback)
+            data = callback.get('data', '')
+            user_id = callback.get('from', {}).get('id')
+            print(f"Callback: {data} from {user_id}")
+            try:
+                handlers.tg.answer_callback_query(callback['id'])
+                print(f"Callback ack ok: {data}")
+            except Exception as exc:
+                print(f"Callback ack failed [{data}]: {exc}")
+            handlers.handle_callback(callback, pre_acknowledged=True)
     except SwingfoxAPIError as exc:
         chat_id = None
         if 'message' in update:
