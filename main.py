@@ -7,7 +7,12 @@ from requests.exceptions import RequestException
 from api.swingfox_client import SwingfoxClient, SwingfoxAPIError
 from config.backend import get_backend_config
 from handlers.bot_handlers import BotHandlers
-from telegram.client import TelegramClient, _is_transient_poll_error, _is_webhook_conflict_error
+from telegram.client import (
+    TelegramClient,
+    _is_duplicate_poll_error,
+    _is_transient_poll_error,
+    _is_webhook_conflict_error,
+)
 
 load_dotenv()
 
@@ -81,10 +86,25 @@ def run_polling() -> None:
         print(f'WARNING: could not switch bot to polling mode: {exc}')
 
     last_update_id = 0
+    last_webhook_check = time.time()
 
     while True:
         try:
+            if time.time() - last_webhook_check >= 60:
+                try:
+                    webhook_url = (tg.get_webhook_info().get('url') or '').strip()
+                    if webhook_url:
+                        print(f'Webhook re-appeared ({webhook_url}); clearing for polling...')
+                        tg.delete_webhook()
+                except Exception as exc:
+                    print(f'Webhook check failed: {exc}')
+                last_webhook_check = time.time()
+
             updates = tg.get_updates(offset=last_update_id + 1)
+            if updates:
+                callbacks = sum(1 for item in updates if 'callback_query' in item)
+                if callbacks:
+                    print(f'Polling batch: {len(updates)} update(s), {callbacks} callback(s)')
 
             for update in updates:
                 uid = update.get('update_id', 0)
@@ -96,6 +116,13 @@ def run_polling() -> None:
             print('Stopped.')
             break
         except RequestException as exc:
+            if _is_duplicate_poll_error(exc):
+                print(
+                    'ERROR: Another process is polling the same bot token. '
+                    'Stop duplicate swingfox_telegram containers.'
+                )
+                time.sleep(5)
+                continue
             if _is_webhook_conflict_error(exc):
                 print('Webhook conflict detected; clearing webhook and resuming polling...')
                 try:
@@ -110,6 +137,13 @@ def run_polling() -> None:
             print(f'Error: {exc}')
             time.sleep(5)
         except Exception as exc:
+            if _is_duplicate_poll_error(exc):
+                print(
+                    'ERROR: Another process is polling the same bot token. '
+                    'Stop duplicate swingfox_telegram containers.'
+                )
+                time.sleep(5)
+                continue
             if _is_webhook_conflict_error(exc):
                 print('Webhook conflict detected; clearing webhook and resuming polling...')
                 try:

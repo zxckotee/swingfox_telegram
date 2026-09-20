@@ -50,6 +50,11 @@ def _is_webhook_conflict_error(exc: BaseException) -> bool:
     )
 
 
+def _is_duplicate_poll_error(exc: BaseException) -> bool:
+    text = str(exc).lower()
+    return 'conflict' in text and 'other getupdates' in text
+
+
 class TelegramClient:
     """Telegram Bot API client with legacy-style long polling."""
 
@@ -80,12 +85,16 @@ class TelegramClient:
 
     def _post(self, path: str, payload: Dict[str, Any]) -> dict:
         last_error: Optional[Exception] = None
-        form_payload = self._encode_form_payload(payload)
+        json_payload = {
+            key: value
+            for key, value in payload.items()
+            if value is not None and value != ''
+        }
         for attempt in range(POST_RETRIES):
             try:
                 response = requests.post(
                     f'{BASE_URL}/{path}',
-                    data=form_payload,
+                    json=json_payload,
                     proxies=PROXIES,
                     timeout=(15, 60)
                 )
