@@ -19,6 +19,16 @@ _backend = get_backend_config()
 UPLOADS_URL = _backend['uploads_url']
 SITE_URL = _backend['web_url']
 
+def _incoming_likes_label(count: int) -> str:
+    n = abs(int(count))
+    mod10, mod100 = n % 10, n % 100
+    if mod10 == 1 and mod100 != 11:
+        return f'{n} новая симпатия'
+    if 2 <= mod10 <= 4 and (mod100 < 10 or mod100 >= 20):
+        return f'{n} новые симпатии'
+    return f'{n} новых симпатий'
+
+
 PROFILE_EDIT_FIELDS = {
     'city': 'город',
     'status': 'статус',
@@ -390,7 +400,7 @@ class BotHandlers:
         queue, index, total = session_store.get_incoming_likes_state(user_id)
         if not queue or index >= len(queue):
             session_store.clear_incoming_likes(user_id)
-            self.tg.send_message(chat_id, "Вы просмотрели всех, кому вы понравились.")
+            self.tg.send_message(chat_id, "Вы просмотрели все новые симпатии.")
             return
 
         profile = queue[index]
@@ -401,7 +411,7 @@ class BotHandlers:
             return
 
         current_number = index + 1
-        header = f"❤️ Вам понравились <b>{total}</b> человек(а). Анкета {current_number} из {total}"
+        header = f"❤️ У вас <b>{_incoming_likes_label(total)}</b>. Анкета {current_number} из {total}"
         caption = f"{header}\n\n{format_swipe_profile_caption({'profile': profile})}"
         ava = avatar_url(profile.get('ava'))
 
