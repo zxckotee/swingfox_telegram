@@ -19,14 +19,11 @@ _backend = get_backend_config()
 UPLOADS_URL = _backend['uploads_url']
 SITE_URL = _backend['web_url']
 
-def _incoming_likes_label(count: int) -> str:
-    n = abs(int(count))
+def _participant_dative_label(count: int) -> str:
+    n = max(1, abs(int(count)))
     mod10, mod100 = n % 10, n % 100
-    if mod10 == 1 and mod100 != 11:
-        return f'{n} новая симпатия'
-    if 2 <= mod10 <= 4 and (mod100 < 10 or mod100 >= 20):
-        return f'{n} новые симпатии'
-    return f'{n} новых симпатий'
+    word = 'участнику' if mod10 == 1 and mod100 != 11 else 'участникам'
+    return f'{n} {word}'
 
 
 PROFILE_EDIT_FIELDS = {
