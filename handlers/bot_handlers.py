@@ -408,7 +408,10 @@ class BotHandlers:
             return
 
         current_number = index + 1
-        header = f"❤️ У вас <b>{_incoming_likes_label(total)}</b>. Анкета {current_number} из {total}"
+        header = (
+            f"❤️ Вы понравились <b>{_participant_dative_label(total)}</b>. "
+            f"Анкета {current_number} из {total}"
+        )
         caption = f"{header}\n\n{format_swipe_profile_caption({'profile': profile})}"
         ava = avatar_url(profile.get('ava'))
 
