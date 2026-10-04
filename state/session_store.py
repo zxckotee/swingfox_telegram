@@ -2,6 +2,8 @@
 
 from typing import Any, Dict, List, Optional
 
+from utils.incoming_likes import compact_incoming_likes_queue, dedupe_profiles_by_login
+
 
 class SessionStore:
     def __init__(self):
@@ -71,6 +73,7 @@ class SessionStore:
 
     def set_incoming_likes(self, telegram_id: int, profiles: List[dict]) -> None:
         entry = self.get(telegram_id)
+        profiles = dedupe_profiles_by_login(profiles)
         entry['incoming_likes_queue'] = profiles
         entry['incoming_likes_index'] = 0
         entry['incoming_likes_total'] = len(profiles)
@@ -78,7 +81,14 @@ class SessionStore:
     def get_incoming_likes_state(self, telegram_id: int) -> tuple:
         entry = self.get(telegram_id)
         queue = entry.get('incoming_likes_queue') or []
-        index = entry.get('incoming_likes_index', 0)
+        index = int(entry.get('incoming_likes_index', 0))
+        if queue:
+            deduped, new_index, total = compact_incoming_likes_queue(queue, index)
+            if deduped != queue or new_index != index or entry.get('incoming_likes_total') != total:
+                entry['incoming_likes_queue'] = deduped
+                entry['incoming_likes_index'] = new_index
+                entry['incoming_likes_total'] = total
+            queue, index = deduped, new_index
         total = entry.get('incoming_likes_total', len(queue))
         return queue, index, total
 
