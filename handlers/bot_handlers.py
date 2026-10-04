@@ -19,6 +19,18 @@ _backend = get_backend_config()
 UPLOADS_URL = _backend['uploads_url']
 SITE_URL = _backend['web_url']
 
+def _dedupe_profiles_by_login(profiles: List[dict]) -> List[dict]:
+    seen: set = set()
+    unique: List[dict] = []
+    for profile in profiles:
+        login = profile.get('login')
+        if not login or login in seen:
+            continue
+        seen.add(login)
+        unique.append(profile)
+    return unique
+
+
 def _participant_dative_label(count: int) -> str:
     n = max(1, abs(int(count)))
     mod10, mod100 = n % 10, n % 100
@@ -384,7 +396,12 @@ class BotHandlers:
 
     def start_incoming_likes_swipe(self, chat_id: int, user_id: int) -> None:
         try:
-            profiles = self.api.get_incoming_likes(user_id)
+            queue, index, _ = session_store.get_incoming_likes_state(user_id)
+            if queue and index < len(queue):
+                self.show_next_incoming_like(chat_id, user_id)
+                return
+
+            profiles = _dedupe_profiles_by_login(self.api.get_incoming_likes(user_id))
             if not profiles:
                 self.tg.send_message(chat_id, "Пока нет новых симпатий.")
                 return
