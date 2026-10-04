@@ -14,10 +14,12 @@ from handlers.profile_pickers import field_uses_picker, format_multi_display, ha
 from state.session_store import session_store
 from utils.telegram_register_link import build_register_url
 from telegram.client import TelegramClient
+from utils.incoming_likes import dedupe_profiles_by_login
 
 _backend = get_backend_config()
 UPLOADS_URL = _backend['uploads_url']
 SITE_URL = _backend['web_url']
+
 
 def _participant_dative_label(count: int) -> str:
     n = max(1, abs(int(count)))
@@ -384,7 +386,12 @@ class BotHandlers:
 
     def start_incoming_likes_swipe(self, chat_id: int, user_id: int) -> None:
         try:
-            profiles = self.api.get_incoming_likes(user_id)
+            queue, index, _ = session_store.get_incoming_likes_state(user_id)
+            if queue and index < len(queue):
+                self.show_next_incoming_like(chat_id, user_id)
+                return
+
+            profiles = dedupe_profiles_by_login(self.api.get_incoming_likes(user_id))
             if not profiles:
                 self.tg.send_message(chat_id, "Пока нет новых симпатий.")
                 return
