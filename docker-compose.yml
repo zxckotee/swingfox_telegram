@@ -23,6 +23,11 @@ services:
       PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-}
     volumes:
       - bot_sessions:/app/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
 
 volumes:
   bot_sessions:
