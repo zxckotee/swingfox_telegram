@@ -112,5 +112,8 @@ class SessionStore:
     def get_swipe_city_only(self, telegram_id: int) -> bool:
         return bool(self.get(telegram_id).get('swipe_city_only'))
 
+    def active_session_count(self) -> int:
+        return len(self._data)
+
 
 session_store = SessionStore()

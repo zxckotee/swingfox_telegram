@@ -126,3 +126,25 @@ docker logs swingfox_telegram_bot --tail 30
 Backend: staging → https://127.0.0.1:3002/api
 Connected to Telegram as @YourBot
 ```
+
+### Бот периодически падает, в консоли только «Attaching to»
+
+**Attaching to swingfox_telegram_bot** — это не ошибка, а подсказка Docker при `docker-compose up` без `-d`. Для разбора падений:
+
+```bash
+cd /root/swingfox_telegram
+bash scripts/bot-logs.sh
+```
+
+Кратко вручную:
+
+```bash
+docker inspect swingfox_telegram_bot --format \
+  'Status={{.State.Status}} Exit={{.State.ExitCode}} OOMKilled={{.State.OOMKilled}}'
+docker logs swingfox_telegram_bot --tail 300
+docker exec swingfox_telegram_bot tail -n 300 /app/data/bot.log
+```
+
+- **OOMKilled=true** / exit **137** — нехватка RAM на сервере.
+- **Exit 1** — смотрите traceback в `/app/data/bot.log`.
+- Строки **`heartbeat`** (раз в ~30 мин) — процесс жив, в логе также RSS и число сессий в памяти.
