@@ -12,7 +12,9 @@ from requests.exceptions import RequestException
 from api.swingfox_client import SwingfoxClient, SwingfoxAPIError
 from config.backend import get_backend_config
 from handlers.bot_handlers import BotHandlers
+from state.backend_availability import downtime_hours, is_backend_available
 from state.session_store import session_store
+from utils.backend_probe import BackendProbe
 from telegram.client import (
     TelegramClient,
     _is_duplicate_poll_error,
@@ -88,8 +90,11 @@ def _process_update(handlers: BotHandlers, update: dict) -> None:
 
 def _log_heartbeat(last_update_id: int) -> None:
     log.info(
-        'heartbeat last_update_id=%s in_memory_sessions=%s rss_mb=%.1f',
+        'heartbeat last_update_id=%s backend_up=%s backend_down_h=%.2f '
+        'in_memory_sessions=%s rss_mb=%.1f',
         last_update_id,
+        is_backend_available(),
+        downtime_hours(),
         session_store.active_session_count(),
         _memory_mb(),
     )
@@ -129,10 +134,13 @@ def run_polling() -> None:
     last_webhook_check = time.time()
     last_heartbeat = time.time()
     heartbeat_interval = int(os.getenv('BOT_HEARTBEAT_SECONDS', '1800'))
+    backend_probe = BackendProbe(api, env_label=env_label)
 
     while not _shutdown_requested:
         try:
             now = time.time()
+            backend_probe.maybe_probe(now)
+
             if now - last_webhook_check >= 60:
                 try:
                     webhook_url = (tg.get_webhook_info().get('url') or '').strip()
@@ -217,11 +225,23 @@ def main() -> None:
         log.error('TELEGRAM_SECRET is not set')
         raise SystemExit('Set TELEGRAM_SECRET in .env')
 
-    try:
-        run_polling()
-    except Exception:
-        log.exception('Fatal error — bot process exiting')
-        raise
+    retry_delay = int(os.getenv('POLLING_FATAL_RETRY_SECONDS', '10'))
+    while not _shutdown_requested:
+        try:
+            run_polling()
+            break
+        except KeyboardInterrupt:
+            break
+        except SystemExit:
+            raise
+        except Exception:
+            if _shutdown_requested:
+                break
+            log.exception(
+                'Unexpected polling crash — restarting in %ss (keeps backend reconnect)',
+                retry_delay,
+            )
+            time.sleep(retry_delay)
 
 
 if __name__ == '__main__':

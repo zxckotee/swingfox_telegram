@@ -147,4 +147,6 @@ docker exec swingfox_telegram_bot tail -n 300 /app/data/bot.log
 
 - **OOMKilled=true** / exit **137** — нехватка RAM на сервере.
 - **Exit 1** — смотрите traceback в `/app/data/bot.log`.
-- Строки **`heartbeat`** (раз в ~30 мин) — процесс жив, в логе также RSS и число сессий в памяти.
+- Строки **`heartbeat`** (раз в ~30 мин) — процесс жив, в логе также `backend_up`, RSS и число сессий в памяти.
+- **`Backend staging unreachable`** / **`still down`** — сайт недоступен, бот продолжает polling и проверяет API каждые ~15 с (без лимита по времени).
+- **`reachable again`** — связь со staging/prod восстановлена.
