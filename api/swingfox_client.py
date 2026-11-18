@@ -21,6 +21,19 @@ T = TypeVar('T')
 class SwingfoxClient:
     """HTTP-клиент SwingFox API. Без auth/password — только пользовательский JWT."""
 
+    def ping(self, timeout: Optional[float] = None) -> bool:
+        """Return True when SwingFox API responds (used while site is redeploying)."""
+        if timeout is None:
+            timeout = float(os.getenv('BACKEND_PROBE_TIMEOUT', '8'))
+        url = f'{self.api_url}/emojis/list'
+        if not self._verify_ssl:
+            warnings.filterwarnings('ignore', category=InsecureRequestWarning)
+        try:
+            response = requests.get(url, timeout=timeout, verify=self._verify_ssl)
+        except requests.RequestException:
+            return False
+        return response.status_code < 502
+
     def __init__(self, api_url: Optional[str] = None, shared_secret: Optional[str] = None):
         backend = get_backend_config()
         self.api_url = (api_url or backend['api_url']).rstrip('/')
