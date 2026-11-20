@@ -101,6 +101,15 @@ class BotHandlers:
             lines.append("\n⚠️ На backend нет /api/telegram/token/refresh — нужен деплой API.")
         self.tg.send_message(chat_id, '\n'.join(lines), parse_mode='HTML')
 
+    def _env_mismatch_hint(self) -> str:
+        if _backend['production']:
+            return ''
+        return (
+            '\n\n⚠️ <b>На swingfox.ru уже «Привязан», а бот просит снова?</b>\n'
+            'Бот смотрит в <b>staging</b>, а профиль — на <b>prod</b> (разные БД). '
+            'Нужен <code>PRODUCTION=on</code> в настройках бота на сервере, затем /start.'
+        )
+
     def _prompt_unlinked(self, chat_id: int, user_id: int) -> None:
         reg_url = build_register_url(user_id, SITE_URL)
         lines = [
@@ -110,6 +119,9 @@ class BotHandlers:
             "",
             "🔗 <b>Уже есть аккаунт?</b> Войдите на сайте → профиль → «Telegram-бот» → получите ссылку и нажмите её.",
         ]
+        hint = self._env_mismatch_hint()
+        if hint:
+            lines.append(hint)
         keyboard_rows = []
         if reg_url:
             lines.insert(3, reg_url)
@@ -143,10 +155,11 @@ class BotHandlers:
     def _send_auth_failure(self, chat_id: int, user_id: int) -> None:
         reason = self.api.last_auth_error or 'not_linked'
         if reason == 'not_linked':
-            self.tg.send_message(
-                chat_id,
-                "Сначала привяжите аккаунт через ссылку из профиля на сайте"
-            )
+            text = "Сначала привяжите аккаунт через ссылку из профиля на сайте."
+            hint = self._env_mismatch_hint()
+            if hint:
+                text = f"{text}\n{hint}"
+            self.tg.send_message(chat_id, text, parse_mode='HTML')
         elif reason == 'backend_unreachable':
             self.tg.send_message(
                 chat_id,
@@ -756,10 +769,7 @@ class BotHandlers:
                 if data.startswith('prof:'):
                     ack('Привяжите аккаунт на сайте', show_alert=True)
                 else:
-                    self.tg.send_message(
-                        chat_id,
-                        'Привяжите аккаунт на сайте через ссылку в профиле на сайте.',
-                    )
+                    self._send_auth_failure(chat_id, user_id)
                 return
 
             try:

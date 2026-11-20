@@ -18,9 +18,9 @@ on:
         default: false
         type: boolean
       production:
-        description: "PRODUCTION=on для prod backend, off для staging (по умолчанию off)"
+        description: "PRODUCTION=on → swingfox.ru (prod), off → staging /stagging"
         required: false
-        default: "off"
+        default: "on"
         type: choice
         options:
           - "off"
@@ -74,11 +74,10 @@ jobs:
             export TELEGRAM_PROXY='${{ secrets.TELEGRAM_PROXY }}'
             export TELEGRAM_API_BASE_URL='${{ secrets.TELEGRAM_API_BASE_URL }}'
             if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-              export PRODUCTION='${{ github.event.inputs.production || 'off' }}'
-            elif [ "${{ github.ref_name }}" = "prod3" ]; then
-              export PRODUCTION='on'
+              export PRODUCTION='${{ github.event.inputs.production || 'on' }}'
             else
-              export PRODUCTION='off'
+              # master push = production bot (@swingerinchik_bot); staging only via manual workflow off
+              export PRODUCTION='on'
             fi
 
             bash scripts/write-env-from-ci.sh "$DEPLOY_PATH"
